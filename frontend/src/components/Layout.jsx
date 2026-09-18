@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
-import { Activity, BrainCircuit, FlaskConical, Globe2, Home, LayoutDashboard, Radio, ShieldCheck, Users } from "lucide-react";
+import { Activity, BrainCircuit, FlaskConical, Globe2, Home, LayoutDashboard, LogOut, Radio, ShieldCheck, UserCog, Users } from "lucide-react";
 import { api } from "../api.js";
+import { setAuth } from "../auth.js";
 import { usePolling } from "../hooks/usePolling.js";
 import AlertToasts from "./AlertToasts.jsx";
 
@@ -13,7 +14,7 @@ const NAV = [
   { to: "/model", label: "Model & Accuracy", icon: BrainCircuit },
 ];
 
-export default function Layout({ children }) {
+export default function Layout({ user, children }) {
   const { data: health } = usePolling(api.health, 10000);
   const { data: live, refresh } = usePolling(api.live, 10000);
 
@@ -56,6 +57,9 @@ export default function Layout({ children }) {
             <Activity className={`h-3.5 w-3.5 ${health ? "text-emerald-400" : "text-red-400"}`} />
             API {health ? "online" : "offline"}
           </div>
+          <div className="flex items-center gap-2">
+            <UserCog className="h-3.5 w-3.5 text-fuchsia-300" /> Signed in as <span className="font-semibold text-slate-200">{user}</span>
+          </div>
           <div>
             AI analyst:{" "}
             <span className="text-slate-200">{health?.ai_analyst === "claude" ? "Claude" : "Built-in template"}</span>
@@ -75,6 +79,9 @@ export default function Layout({ children }) {
           <div className="hidden text-sm text-slate-400 md:block">Security Operations Center</div>
           <div className="flex shrink-0 gap-2">
           <AlertToasts />
+          <button onClick={() => setAuth(null)} className="btn-ghost text-xs" title="Sign out">
+            <LogOut className="h-4 w-4" /> Sign out
+          </button>
           <button onClick={toggleLive} className="btn-ghost text-xs" title="Background company activity">
             <Radio className={`h-4 w-4 ${live?.enabled ? "animate-pulse text-emerald-400" : "text-slate-500"}`} />
             Live traffic {live?.enabled ? "ON" : "OFF"}

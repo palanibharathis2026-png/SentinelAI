@@ -5,6 +5,7 @@ import { usePolling } from "../hooks/usePolling.js";
 import StatCard from "../components/StatCard.jsx";
 import RiskTimeline from "../components/RiskTimeline.jsx";
 import AlertFeed from "../components/AlertFeed.jsx";
+import ActiveStaff from "../components/ActiveStaff.jsx";
 import AttackSimulator from "../components/AttackSimulator.jsx";
 import DepartmentHeatmap from "../components/DepartmentHeatmap.jsx";
 import ThreatMap from "../components/ThreatMap.jsx";
@@ -91,6 +92,7 @@ export default function Dashboard() {
         </div>
 
         <div className="space-y-6">
+          <ActiveStaff />
           <AttackSimulator onLaunched={refreshAll} />
           <div className="card">
             <div className="card-title">Riskiest employees (24h)</div>

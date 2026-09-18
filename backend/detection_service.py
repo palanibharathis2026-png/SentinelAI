@@ -185,13 +185,21 @@ class SentinelEngine:
         verdict = assess(facts, float(self.detector.risk(vec)[0]))
         return Event(**{k: e[k] for k in EVENT_FIELDS}, source=source, features=facts, **verdict)
 
-    def _trusted_prev(self, db: Session, user_id: str, before) -> dict | None:
+    def _trusted_prev(self, db: Session, user_id: str, before, exclude_id: int | None = None) -> dict | None:
         """Last trusted (non-blocked) session, so an attacker's session never becomes the reference point."""
-        prev = db.scalars(select(Event).where(Event.user_id == user_id,
-                                              Event.timestamp <= before,
-                                              Event.tier != "BLOCK")
-                          .order_by(Event.timestamp.desc()).limit(1)).first()
+        q = select(Event).where(Event.user_id == user_id, Event.timestamp <= before, Event.tier != "BLOCK")
+        if exclude_id is not None:
+            q = q.where(Event.id != exclude_id)
+        prev = db.scalars(q.order_by(Event.timestamp.desc(), Event.id.desc()).limit(1)).first()
         return event_dict(prev) if prev else None
+
+    @staticmethod
+    def _auto_block(db: Session, row: Event) -> None:
+        emp = db.get(Employee, row.user_id)
+        if row.tier == "BLOCK" and emp and emp.status != "blocked":
+            emp.status = "blocked"
+            emp.status_reason = f"Auto-blocked: session #{row.id} scored {row.risk}/100 ({row.threat})"
+            emp.status_changed_at = simulator.now_ist()
 
     def ingest(self, db: Session, e: dict, source: str) -> Event:
         """Score a new session, store it, and auto-block the account on a BLOCK verdict."""
@@ -199,11 +207,20 @@ class SentinelEngine:
             row = self._score(e, self._trusted_prev(db, e["user_id"], e["timestamp"]), source)
             db.add(row)
             db.flush()
-            emp = db.get(Employee, e["user_id"])
-            if row.tier == "BLOCK" and emp and emp.status != "blocked":
-                emp.status = "blocked"
-                emp.status_reason = f"Auto-blocked: session #{row.id} scored {row.risk}/100 ({row.threat})"
-                emp.status_changed_at = row.timestamp
+            self._auto_block(db, row)
+            db.commit()
+            db.refresh(row)
+            return row
+
+    def rescore(self, db: Session, row: Event) -> Event:
+        """Re-score a stored session after its activity changed (staff portal sessions grow as people work)."""
+        with self.lock:
+            e = event_dict(row)
+            fresh = self._score(e, self._trusted_prev(db, row.user_id, row.timestamp, exclude_id=row.id), row.source)
+            for k in ("ml_score", "rule_score", "risk", "tier", "action", "threat", "reasons", "features"):
+                setattr(row, k, getattr(fresh, k))
+            row.explanation = row.explanation_source = None
+            self._auto_block(db, row)
             db.commit()
             db.refresh(row)
             return row

@@ -8,6 +8,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
+    host: true, // also reachable from phones/laptops on the same Wi-Fi (staff portal demo)
     proxy: { "/api": process.env.VITE_API_PROXY || "http://127.0.0.1:8000" },
   },
 });

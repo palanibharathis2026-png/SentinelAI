@@ -19,10 +19,40 @@ An **AI Security Analyst** (Claude, with an offline fallback) explains each inci
 
 ![Landing page](docs/screenshots/landing.png)
 
+## Logins
+
+The front page is a login screen. Nothing is visible until someone signs in.
+
+**SOC admin / owner:** username `TOBY`, password `5429` (change with `ADMIN_USERNAME` / `ADMIN_PASSWORD` in `.env`).
+
+**Staff portal (demo accounts).** A guest signs in as an employee, and the admin dashboard shows them under **Staff online now** with a live risk score. Their real device (from the browser) and wrong-password attempts are scored. Actions such as *Export ALL company data* or *Turn off audit logs* get the account locked in real time.
+
+| Staff ID | Password | Employee | Role | Office |
+|---|---|---|---|---|
+| `pradish` | `4821` | Pradish Kumar | Backend Developer | Chennai |
+| `ananya` | `7306` | Ananya Iyer | Financial Analyst | Chennai |
+| `rahul` | `1957` | Rahul Menon | HR Manager | Bengaluru |
+| `karthik` | `6643` | Karthik Raj | DevOps Engineer | Bengaluru |
+| `divya` | `3198` | Divya Nair | Account Executive | Mumbai |
+| `arjun` | `8570` | Arjun Reddy | Data Scientist | Hyderabad |
+| `meera` | `2764` | Meera Krishnan | Legal Counsel | Delhi |
+| `vikram` | `9415` | Vikram Singh | Payroll Specialist | Pune |
+| `sneha` | `5082` | Sneha Patel | Content Lead | Mumbai |
+| `aditya` | `6239` | Aditya Rao | Frontend Developer | Chennai |
+
+Guests on the same Wi-Fi open `http://<your-laptop-ip>:5173` (shown on the dashboard and by `start.bat`). If the network blocks device-to-device traffic, use a second browser window on the same laptop. A locked account can be unblocked from **Employees**.
+
+![Login](docs/screenshots/login.png)
+
+![Staff portal](docs/screenshots/staff-portal.png)
+
+> These are demo credentials for a hackathon. For real use, keep the admin password in `.env` and store staff passwords hashed in the database.
+
 ## Features
 
 | | Feature | What it shows |
 |---|---|---|
+| 🔐 | **Login** | Admin login guards the dashboard; staff portal for live demo logins, shown as *Staff online now* |
 | 🏠 | **Overview page** | The problem, how it works in 4 steps, live accuracy and a mini threat map |
 | 📊 | **SOC dashboard** | Live sessions, risk timeline, open alerts, riskiest employees, department heatmap |
 | 🌍 | **Global threat map** | Login locations worldwide; animated attack arcs from the employee's home city to the suspicious login |
@@ -152,13 +182,14 @@ Put `ANTHROPIC_API_KEY=...` in `.env` at the repo root. Without a key, or if the
 
 ## Demo script (3-5 minutes)
 
-1. **Overview.** *"The password was correct. The behavior was not."* Walk through the 4 steps.
-2. **SOC dashboard.** Live traffic is on and normal sessions stream in green. *"Every dot is a login compared with that employee's digital twin."*
-3. **Attack simulator → Account takeover.** The alarm sounds, a toast pops up, the session appears as a red BLOCK and the account is auto-locked.
-4. **Open the incident.** Show the "Password ✓ Login ✓ Behaviour ✗" banner, the reasons, the systems and admin actions touched, and the twin comparison. Click **Explain this session**, then **Download report**.
-5. **Threat map.** The attack arc flies from the employee's city to the attacker's.
-6. **Risk Lab.** Start from *Normal day* (risk 0). Change the city to Moscow, then turn on `disable_audit_logs`, and watch the risk climb live. Try *Stealth leak* to show the ML catching what the rules miss.
-7. **Model & Accuracy page.** ML only vs rules only vs hybrid, on data the model never saw.
+1. **Login as TOBY.** Hand a friend your phone or a second browser: they sign in to the **Staff portal** (e.g. `rahul` / `1957`). A green *Staff logged in* toast appears and they show up under **Staff online now**. Ask them to click *Export ALL company data*: their account is locked live and the alarm goes off.
+2. **Overview.** *"The password was correct. The behavior was not."* Walk through the 4 steps.
+3. **SOC dashboard.** Live traffic is on and normal sessions stream in green. *"Every dot is a login compared with that employee's digital twin."*
+4. **Attack simulator → Account takeover.** The alarm sounds, a toast pops up, the session appears as a red BLOCK and the account is auto-locked.
+5. **Open the incident.** Show the "Password ✓ Login ✓ Behaviour ✗" banner, the reasons, the systems and admin actions touched, and the twin comparison. Click **Explain this session**, then **Download report**.
+6. **Threat map.** The attack arc flies from the employee's city to the attacker's.
+7. **Risk Lab.** Start from *Normal day* (risk 0). Change the city to Moscow, then turn on `disable_audit_logs`, and watch the risk climb live. Try *Stealth leak* to show the ML catching what the rules miss.
+8. **Model & Accuracy page.** ML only vs rules only vs hybrid, on data the model never saw.
 
 ![Incident view](docs/screenshots/incident.png)
 
@@ -170,7 +201,11 @@ Put `ANTHROPIC_API_KEY=...` in `.env` at the repo root. Without a key, or if the
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| GET | `/api/health` | Status, AI analyst mode |
+| POST | `/api/auth/login` | Admin login → token (all other endpoints need `Authorization: Bearer <token>`) |
+| POST | `/api/auth/staff-login` | Staff portal login; creates a scored session |
+| GET/POST | `/api/staff/me`, `/me/heartbeat`, `/me/activity`, `/me/logout` | Staff portal (staff token) |
+| GET | `/api/staff/active` | Staff online now, with live risk |
+| GET | `/api/health` | Status, AI analyst mode, LAN address |
 | GET | `/api/stats` | Dashboard KPIs |
 | GET | `/api/events` | Sessions (filters: `limit`, `min_risk`, `user_id`, `tier`) |
 | GET | `/api/alerts` | MFA/BLOCK incidents (`status=open\|resolved\|false_positive\|all`) |
@@ -198,6 +233,7 @@ Interactive docs: http://localhost:8000/docs
 SentinelAI/
 ├── backend/
 │   ├── main.py                 # FastAPI app and endpoints
+│   ├── auth.py                 # admin + staff logins, signed tokens
 │   ├── detection_service.py    # pipeline: seed, train, score, evaluate, simulate
 │   ├── feature_engineering.py  # digital twin + 13 features
 │   ├── ml_detector.py          # Isolation Forest + RobustDistance (numpy)

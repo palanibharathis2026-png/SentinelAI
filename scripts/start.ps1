@@ -85,6 +85,13 @@ while (-not ((IsUp $apiUrl) -and (IsUp $dashboardUrl))) {
 
 Start-Process $dashboardUrl
 Write-Host "`nSentinelAI is running!" -ForegroundColor Green
-Write-Host "  Dashboard: $dashboardUrl"
+Write-Host "  Dashboard: $dashboardUrl   (admin login: TOBY / 5429)"
 Write-Host "  API docs:  http://localhost:8000/docs"
+$lan = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+    Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" -and $_.PrefixOrigin -ne "WellKnown" } |
+    Select-Object -First 1 -ExpandProperty IPAddress
+if ($lan) {
+    Write-Host "  Staff portal for guests on the same Wi-Fi: http://${lan}:5173" -ForegroundColor Yellow
+    Write-Host "  (If Windows Firewall asks about Node.js, click 'Allow'.)"
+}
 Write-Host "To stop, close the 'SentinelAI API' and 'SentinelAI Dashboard' windows."

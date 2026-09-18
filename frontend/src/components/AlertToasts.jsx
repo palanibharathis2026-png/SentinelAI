@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Siren, Volume2, VolumeX, X } from "lucide-react";
+import { LogIn, Siren, Volume2, VolumeX, X } from "lucide-react";
 import { api } from "../api.js";
 import { riskHex } from "../utils/format.js";
 
@@ -35,18 +35,65 @@ function playAlarm(tier) {
   }
 }
 
-// Watches for new MFA/BLOCK alerts and pops a toast (plus an alarm) for each one.
+// Soft rising chime for a staff login.
+function playChime() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [523, 659, 784].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const t = ctx.currentTime + i * 0.12;
+      gain.gain.setValueAtTime(0.08, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.3);
+    });
+    setTimeout(() => ctx.close(), 1200);
+  } catch {
+    /* audio not available */
+  }
+}
+
+// Watches for new MFA/BLOCK alerts and new staff-portal logins, and pops a toast (plus a sound) for each.
 export default function AlertToasts() {
   const [toasts, setToasts] = useState([]);
   const [muted, setMuted] = useState(readMuted);
   const seen = useRef(null);
+  const seenLogins = useRef(null);
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
   const navigate = useNavigate();
 
+  function push(items) {
+    setToasts((t) => [...items, ...t].slice(0, 4));
+    items.forEach((item) => setTimeout(() => setToasts((t) => t.filter((x) => x.key !== item.key)), 9000));
+  }
+
   useEffect(() => {
     let stop = false;
+    async function pollLogins() {
+      try {
+        const staff = await api.activeStaff();
+        if (stop) return;
+        if (seenLogins.current === null) {
+          seenLogins.current = new Set(staff.map((s) => s.event_id));
+          return;
+        }
+        const fresh = staff.filter((s) => !seenLogins.current.has(s.event_id));
+        fresh.forEach((s) => seenLogins.current.add(s.event_id));
+        if (fresh.length) {
+          if (!mutedRef.current) playChime();
+          push(fresh.map((s) => ({ ...s, id: s.event_id, key: `login-${s.event_id}`, kind: "login" })));
+        }
+      } catch {
+        /* API offline */
+      }
+    }
     async function poll() {
+      pollLogins();
       try {
         const alerts = await api.alerts("all");
         if (stop) return;
@@ -58,8 +105,7 @@ export default function AlertToasts() {
         fresh.forEach((a) => seen.current.add(a.id));
         if (fresh.length) {
           if (!mutedRef.current) playAlarm(fresh[0].tier);
-          setToasts((t) => [...fresh.slice(0, 3), ...t].slice(0, 4));
-          fresh.forEach((a) => setTimeout(() => setToasts((t) => t.filter((x) => x.id !== a.id)), 9000));
+          push(fresh.slice(0, 3).map((a) => ({ ...a, key: `alert-${a.id}`, kind: "alert" })));
         }
       } catch {
         /* API offline: the layout already shows this */
@@ -91,9 +137,24 @@ export default function AlertToasts() {
         {muted ? "Muted" : "Sound on"}
       </button>
       <div className="no-print fixed right-4 bottom-4 z-50 flex w-80 flex-col gap-2">
-        {toasts.map((a) => (
+        {toasts.map((a) => a.kind === "login" ? (
           <div
-            key={a.id}
+            key={a.key}
+            className="toast-in cursor-pointer rounded-xl border border-emerald-400/60 bg-slate-900/95 p-3 shadow-2xl backdrop-blur"
+            style={{ boxShadow: "0 0 24px #34d39955" }}
+            onClick={() => navigate(`/incidents/${a.id}`)}
+          >
+            <div className="flex items-center gap-2">
+              <LogIn className="h-4 w-4 text-emerald-300" />
+              <span className="text-sm font-semibold text-emerald-300">Staff logged in</span>
+              <span className="ml-auto h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+            </div>
+            <div className="mt-1 text-sm text-slate-100">{a.name}</div>
+            <div className="text-xs text-slate-400">{a.city} · {a.device} · risk {a.risk}</div>
+          </div>
+        ) : (
+          <div
+            key={a.key}
             className="toast-in cursor-pointer rounded-xl border bg-slate-900/95 p-3 shadow-2xl backdrop-blur"
             style={{ borderColor: riskHex(a.risk), boxShadow: `0 0 24px ${riskHex(a.risk)}55` }}
             onClick={() => navigate(`/incidents/${a.id}`)}
@@ -107,7 +168,7 @@ export default function AlertToasts() {
                 className="ml-auto text-slate-500 hover:text-slate-200"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setToasts((t) => t.filter((x) => x.id !== a.id));
+                  setToasts((t) => t.filter((x) => x.key !== a.key));
                 }}
               >
                 <X className="h-4 w-4" />

@@ -1,11 +1,15 @@
 // All calls go to /api, which Vite (dev) or nginx (Docker) forwards to the FastAPI backend.
+import { getAuth, setAuth } from "./auth.js";
+
 const BASE = import.meta.env.VITE_API_URL || "";
 
 async function request(path, options = {}) {
+  const token = getAuth()?.token;
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     ...options,
   });
+  if (res.status === 401 && token) setAuth(null); // expired or server restarted: back to the login page
   if (!res.ok) {
     let message = res.statusText;
     try {
@@ -44,4 +48,11 @@ export const api = {
   departments: () => request("/api/departments"),
   labOptions: () => request("/api/lab/options"),
   labScore: (body) => post("/api/lab/score", body),
+  login: (username, password) => post("/api/auth/login", { username, password }),
+  staffLogin: (username, password, city) => post("/api/auth/staff-login", { username, password, city: city || null }),
+  staffMe: () => request("/api/staff/me"),
+  staffHeartbeat: () => post("/api/staff/me/heartbeat"),
+  staffActivity: (kind, system) => post("/api/staff/me/activity", { kind, system: system || null }),
+  staffLogout: () => post("/api/staff/me/logout"),
+  activeStaff: () => request("/api/staff/active"),
 };
