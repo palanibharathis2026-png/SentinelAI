@@ -105,10 +105,21 @@ export default function Evaluation({ curves }) {
                   ))}
                 </tbody>
               </table>
+              {r.hybrid.recall_at_false_alarm_rate && (
+                <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                  <Stat label="Insiders caught at least once" value={`${r.per_attacker.caught_at_5pct_alerts} / ${r.per_attacker.attackers}`}
+                    note="when 5% of normal days are flagged" />
+                  <Stat label="Insider days caught" value={pct(r.hybrid.recall_at_false_alarm_rate["0.05"].recall)}
+                    note={`5% alert budget · ${pct(r.hybrid.recall_at_false_alarm_rate["0.1"].recall)} at 10%`} />
+                  <Stat label="Ranking quality (AUC)" value={r.hybrid.auc.toFixed(3)} note={`rules alone ${r.rules_only.auc.toFixed(3)}`} />
+                </div>
+              )}
               {r.curves && <Curves curves={r.curves} kind="roc" height={180} />}
               <p className="text-xs text-slate-500">
-                Carnegie Mellon CERT Insider Threat dataset: labelled insider cases, with no locations, failed logins
-                or API logs, so this tests after-hours work, new PCs, USB use and data leaving by email.
+                Carnegie Mellon CERT Insider Threat dataset r4.2 (© 2011 ExactData, LLC): 200 employees incl. 70 labelled
+                insiders, one session per employee-day. It has no locations, failed logins or API logs, so this tests
+                after-hours work, new PCs, USB use and data leaving by email. Our alert threshold (60) was calibrated on the
+                demo company, so on CERT a real deployment would set the threshold by alert budget instead.
                 Evaluated {fmtDateTime(r.evaluated_at)}.
               </p>
             </div>
@@ -120,6 +131,16 @@ export default function Evaluation({ curves }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, note }) {
+  return (
+    <div className="rounded-lg bg-slate-950/50 p-2">
+      <div className="font-mono text-lg text-emerald-300">{value}</div>
+      <div className="text-slate-300">{label}</div>
+      <div className="text-slate-500">{note}</div>
     </div>
   );
 }

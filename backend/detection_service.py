@@ -85,7 +85,13 @@ def _curves(labels: np.ndarray, scores: np.ndarray) -> dict:
                 keep.append([round(x, 4), round(y, 4)])
         return keep
 
-    return {"roc": thin(roc), "pr": thin(pr), "auc": round(auc, 4), "average_precision": round(ap, 4)}
+    at_fpr = {}
+    for budget in (0.01, 0.05, 0.10):  # best recall while flagging at most this share of normal sessions
+        ok = [(tpr, t) for (fpr, tpr), t in zip(roc[1:-1], range(101, -1, -1)) if fpr <= budget]
+        tpr, t = max(ok) if ok else (0.0, 101)
+        at_fpr[str(budget)] = {"recall": round(tpr, 4), "threshold": t}
+    return {"roc": thin(roc), "pr": thin(pr), "auc": round(auc, 4), "average_precision": round(ap, 4),
+            "recall_at_false_alarm_rate": at_fpr}
 ALERT_THRESHOLD = 60  # MFA or BLOCK counts as "detected"
 LEARN_WINDOW_DAYS = 30  # twins absorb recent low-risk sessions from this many days
 LEARN_MIN_AGE_HOURS = 12  # a session is learned only once it is finished
@@ -332,9 +338,9 @@ class SentinelEngine:
         """Accuracy on the held-out test days, always against the history-only twins so versions compare fairly."""
         detector = detector or self.detector
         test_from = self.train_end_day
-        rows = [(e["scenario"], v["ml_score"], v["rule_score"], v["risk"])
-                for e, _, v in self._score_sequence(events, detector, self.base_twins,
-                                                     skip=lambda e: day(e) < test_from)]
+        scored = self._score_sequence(events, detector, self.base_twins, skip=lambda e: day(e) < test_from)
+        rows = [(e["scenario"], v["ml_score"], v["rule_score"], v["risk"]) for e, _, v in scored]
+        users = [e["user_id"] for e, _, _ in scored]
         labels = np.array([r[0] is not None for r in rows])
         ml = np.array([r[1] for r in rows])
         rules = np.array([r[2] for r in rows])
@@ -347,16 +353,25 @@ class SentinelEngine:
             label = simulator.SCENARIOS[name]["label"] if name in simulator.SCENARIOS else \
                 EXTERNAL_LABELS.get(name, name.replace("_", " ").capitalize())
             per_scenario[name] = {"label": label, "caught": int(sum(hits)), "total": len(hits)}
+        curves = {"ml_only": _curves(labels, ml), "rules_only": _curves(labels, rules), "hybrid": _curves(labels, hybrid)}
+        # Attackers caught: people with at least one flagged attack session (at our threshold, and at a 5% alert budget)
+        attackers = {u for u, lab in zip(users, labels) if lab}
+        t5 = curves["hybrid"]["recall_at_false_alarm_rate"]["0.05"]["threshold"]
+        per_attacker = {
+            "attackers": len(attackers),
+            "caught": len({u for u, lab, r in zip(users, labels, hybrid) if lab and r >= ALERT_THRESHOLD}),
+            "caught_at_5pct_alerts": len({u for u, lab, r in zip(users, labels, hybrid) if lab and r >= t5}),
+        }
         return {
             "test_sessions": len(rows),
             "test_attacks": int(labels.sum()),
+            "per_attacker": per_attacker,
             "alert_threshold": ALERT_THRESHOLD,
             "ml_only": _score_report(labels, ml >= ALERT_THRESHOLD),
             "rules_only": _score_report(labels, rules >= ALERT_THRESHOLD),
             "hybrid": _score_report(labels, hybrid >= ALERT_THRESHOLD),
             "per_scenario": per_scenario,
-            "curves": {"ml_only": _curves(labels, ml), "rules_only": _curves(labels, rules),
-                       "hybrid": _curves(labels, hybrid)},
+            "curves": curves,
             "trained_on": detector.trained_on,
             "features": FEATURE_NAMES,
             "tiers": [{"min": t[0], "tier": t[1], "action": t[2]} for t in TIERS],

@@ -31,10 +31,12 @@ def run(events: list[dict]) -> dict:
     engine._fit(events, save=False)
     m = engine.metrics
     out = {"test_sessions": m["test_sessions"], "test_attacks": m["test_attacks"],
-           "training_sessions": engine.detector.trained_on, "per_scenario": m["per_scenario"]}
+           "training_sessions": engine.detector.trained_on, "per_scenario": m["per_scenario"],
+           "per_attacker": m["per_attacker"]}
     for k in ("ml_only", "rules_only", "hybrid"):
         out[k] = {**{x: m[k][x] for x in METRICS},
-                  "auc": m["curves"][k]["auc"], "average_precision": m["curves"][k]["average_precision"]}
+                  "auc": m["curves"][k]["auc"], "average_precision": m["curves"][k]["average_precision"],
+                  "recall_at_false_alarm_rate": m["curves"][k]["recall_at_false_alarm_rate"]}
     out["curves"] = m["curves"]
     return out
 
@@ -79,6 +81,12 @@ def main():
             h = r[k]
             print(f"  {k:10s} recall {h['recall']:.1%}  precision {h['precision']:.1%}  "
                   f"AUC {h['auc']:.3f}  false alarms {h['fp']}")
+            at = h["recall_at_false_alarm_rate"]
+            print(f"             recall when 1% / 5% / 10% of normal days are flagged: "
+                  f"{at['0.01']['recall']:.1%} / {at['0.05']['recall']:.1%} / {at['0.1']['recall']:.1%}")
+        pa = r["per_attacker"]
+        print(f"  insiders in the test period: {pa['attackers']}; caught at least once: {pa['caught']} at risk >= 60, "
+              f"{pa['caught_at_5pct_alerts']} when 5% of normal days are flagged")
     else:
         runs = []
         for seed in range(1, args.seeds + 1):

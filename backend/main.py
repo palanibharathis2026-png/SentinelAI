@@ -70,7 +70,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="SentinelAI", version="1.0.0", lifespan=lifespan)
 
 # Everything under /api needs a login except these. Staff tokens may only use their own portal endpoints.
-OPEN_PATHS = {"/api/health", "/api/auth/login", "/api/auth/admin-2fa", "/api/auth/staff-login", "/api/auth/staff-otp"}
+OPEN_PATHS = {"/api/health", "/api/auth/login", "/api/auth/admin-2fa", "/api/auth/admin-email-code",
+              "/api/auth/staff-login", "/api/auth/staff-otp"}
 
 
 @app.middleware("http")

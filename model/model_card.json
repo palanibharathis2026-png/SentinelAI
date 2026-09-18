@@ -1,7 +1,7 @@
 {
   "name": "SentinelAI behavioural anomaly detector",
   "version": "1.0",
-  "trained_at": "2026-09-19T00:57:05",
+  "trained_at": "2026-09-19T01:08:26",
   "type": "Unsupervised anomaly detection ensemble (trained only on normal behaviour)",
   "algorithms": [
     {
@@ -28,26 +28,26 @@
     "median_normal_session": 0,
     "p95_normal_session": 25,
     "forest_raw": [
-      0.3726,
-      0.5403
+      0.3681,
+      0.5426
     ],
     "distance_raw": [
-      0.4392,
-      1.3962
+      0.4351,
+      1.4379
     ]
   },
   "features": [
     {
       "name": "hours_outside_usual_window",
       "description": "Hours between the login time and the person's usual working window",
-      "split_share": 0.0886,
+      "split_share": 0.0955,
       "normal_median": 0.0,
-      "normal_spread": 0.6314
+      "normal_spread": 0.6374
     },
     {
       "name": "unusual_weekend_login",
       "description": "1 if a weekend login by someone who rarely works weekends",
-      "split_share": 0.0252,
+      "split_share": 0.0255,
       "normal_median": 0.0,
       "normal_spread": 0.25
     },
@@ -68,49 +68,49 @@
     {
       "name": "new_city",
       "description": "1 if this person never logged in from this city",
-      "split_share": 0.0441,
+      "split_share": 0.0446,
       "normal_median": 0.0,
       "normal_spread": 0.25
     },
     {
       "name": "travel_speed_log",
       "description": "log(1 + km/h) needed to travel from the last trusted session",
-      "split_share": 0.0797,
+      "split_share": 0.0862,
       "normal_median": 0.0,
       "normal_spread": 1.0276
     },
     {
       "name": "failed_logins",
       "description": "Failed attempts before the successful login",
-      "split_share": 0.0515,
+      "split_share": 0.0513,
       "normal_median": 0.0,
       "normal_spread": 0.3634
     },
     {
       "name": "download_ratio_log",
       "description": "log of files downloaded vs. this person's average",
-      "split_share": 0.1711,
+      "split_share": 0.1641,
       "normal_median": 0.019,
       "normal_spread": 0.3956
     },
     {
       "name": "data_volume_ratio_log",
       "description": "log of MB downloaded vs. this person's average",
-      "split_share": 0.1732,
+      "split_share": 0.1725,
       "normal_median": 0.0126,
       "normal_spread": 0.4561
     },
     {
       "name": "api_ratio_log",
       "description": "log of API calls vs. this person's average",
-      "split_share": 0.1785,
+      "split_share": 0.1661,
       "normal_median": 0.0044,
       "normal_spread": 0.3279
     },
     {
       "name": "sensitive_ratio_log",
       "description": "log of sensitive records opened vs. this person's average",
-      "split_share": 0.1664,
+      "split_share": 0.1724,
       "normal_median": -0.157,
       "normal_spread": 0.516
     },
@@ -124,7 +124,7 @@
     {
       "name": "unfamiliar_admin_actions",
       "description": "Number of admin actions this person never performed before",
-      "split_share": 0.0216,
+      "split_share": 0.0219,
       "normal_median": 0.0,
       "normal_spread": 0.25
     }

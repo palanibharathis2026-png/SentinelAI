@@ -42,7 +42,8 @@ presence_lock = threading.Lock()
 revoked_sessions: set[int] = set()      # portal sessions the SOC force-signed-out
 admin_failures: list[float] = []
 ADMIN_MAX_FAILURES, ADMIN_LOCK_SECONDS = 5, 120
-admin_challenges: dict[str, float] = {}  # password accepted, waiting for the authenticator code
+admin_challenges: dict[str, dict] = {}   # password accepted, waiting for the app or email code
+ADMIN_EMAIL_RESEND_SECONDS = 30
 STAFF_MAX_FAILURES = 5                   # wrong passwords in a row before a staff account is locked
 
 
@@ -194,14 +195,51 @@ def admin_login(body: LoginRequest, request: Request, db: Session = Depends(get_
         admin_failures.clear()
         return _admin_token(db, request)
     cid = secrets.token_urlsafe(16)
-    admin_challenges[cid] = time.time() + OTP_SECONDS
+    admin_challenges[cid] = {"expires": time.time() + OTP_SECONDS, "email_code": None, "tries": 0, "sent_at": 0.0}
+    email = _admin_email(db)
+    extra = {"email_available": _real_delivery(email), "email": _mask(email)}
+    if extra["email_available"]:  # email is set up: send the code straight away (the app code works too)
+        _send_admin_code(db, cid)
+        extra["email_sent"] = True
     if _setting(db, "admin_totp_secret"):
-        return {"mfa_required": True, "challenge_id": cid, "enrolled": True}
+        return {"mfa_required": True, "challenge_id": cid, "enrolled": True, **extra}
     # First sign-in: set up the authenticator app. The secret only becomes active once a code is confirmed.
     pending = _setting(db, "admin_totp_pending") or auth.new_totp_secret()
     _set_setting(db, "admin_totp_pending", pending)
     return {"mfa_required": True, "challenge_id": cid, "enrolled": False, "secret": pending,
-            "otpauth_uri": auth.totp_uri(pending, auth.ADMIN_USERNAME)}
+            "otpauth_uri": auth.totp_uri(pending, auth.ADMIN_USERNAME), **extra}
+
+
+def _send_admin_code(db: Session, cid: str) -> None:
+    ch = admin_challenges[cid]
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    ch.update(email_code=hashlib.sha256(code.encode()).hexdigest(), tries=0, sent_at=time.time(),
+              expires=time.time() + OTP_SECONDS)
+    mailer.send(db, _admin_email(db), f"SentinelAI admin sign-in code: {code}",
+                f"Your SentinelAI admin sign-in code is {code}. It expires in {OTP_SECONDS // 60} minutes.\n\n"
+                "Someone entered the correct admin password. If this wasn't you, change the admin password now.",
+                "otp")
+
+
+class AdminEmailCode(BaseModel):
+    challenge_id: str
+
+
+@router.post("/api/auth/admin-email-code")
+def admin_email_code(body: AdminEmailCode, db: Session = Depends(get_db)):
+    """Send (or re-send) the admin sign-in code to the admin's email address."""
+    ch = admin_challenges.get(body.challenge_id)
+    if not ch or ch["expires"] < time.time():
+        raise HTTPException(401, "This sign-in expired. Enter your password again.")
+    email = _admin_email(db)
+    if not _real_delivery(email):
+        raise HTTPException(400, "Email sending isn't set up yet (SMTP settings and ADMIN_EMAIL in .env). "
+                                 "Use the authenticator app for now.")
+    wait = ADMIN_EMAIL_RESEND_SECONDS - (time.time() - ch["sent_at"])
+    if wait > 0:
+        raise HTTPException(429, f"A code was just sent. Wait {int(wait) + 1} seconds before asking again.")
+    _send_admin_code(db, body.challenge_id)
+    return {"sent_to": _mask(email)}
 
 
 class AdminCode(BaseModel):
@@ -212,19 +250,26 @@ class AdminCode(BaseModel):
 @router.post("/api/auth/admin-2fa")
 def admin_second_factor(body: AdminCode, request: Request, db: Session = Depends(get_db)):
     _admin_throttle()
-    expires = admin_challenges.get(body.challenge_id)
-    if not expires or expires < time.time():
+    ch = admin_challenges.get(body.challenge_id)
+    if not ch or ch["expires"] < time.time():
         admin_challenges.pop(body.challenge_id, None)
         raise HTTPException(401, "This sign-in expired. Enter your password again.")
     secret = _setting(db, "admin_totp_secret")
     enrolling = secret is None
     secret = secret or _setting(db, "admin_totp_pending")
-    if not secret or not auth.verify_totp(secret, body.code):
+    by_app = bool(secret) and auth.verify_totp(secret, body.code)
+    by_email = bool(ch["email_code"]) and ch["tries"] < OTP_MAX_TRIES and hmac.compare_digest(
+        ch["email_code"], hashlib.sha256(body.code.encode()).hexdigest())
+    if not (by_app or by_email):
+        ch["tries"] += 1
         admin_failures.append(time.time())
-        audit(db, request, "admin_2fa_failed", auth.ADMIN_USERNAME, "wrong authenticator code", actor="anonymous")
-        raise HTTPException(401, "Wrong or expired code. Use the current 6-digit code from your authenticator app.")
+        audit(db, request, "admin_2fa_failed", auth.ADMIN_USERNAME, "wrong verification code", actor="anonymous")
+        raise HTTPException(401, "Wrong or expired code. Use the code from your email or your authenticator app.")
     admin_challenges.pop(body.challenge_id, None)
     admin_failures.clear()
+    if by_email and not by_app:
+        audit(db, request, "admin_2fa_email", auth.ADMIN_USERNAME, "verified with an emailed code", actor=auth.ADMIN_USERNAME)
+        return _admin_token(db, request)
     if enrolling:
         _set_setting(db, "admin_totp_secret", secret)
         _set_setting(db, "admin_totp_pending", None)

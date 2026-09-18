@@ -474,6 +474,17 @@ def ingest(db: Session, engine, source: str, payload) -> dict:
 
 
 # ------------------------------------------------------------ demo samples
+def _in_usual_hours(now_utc: datetime, twin: dict, minutes_ago: int) -> datetime:
+    """The latest moment before now (minus a few minutes) that falls in the person's usual working hours."""
+    t = now_utc - timedelta(minutes=minutes_ago)
+    hours = set(twin.get("active_hours") or range(24))
+    for _ in range(48):
+        if t.astimezone(IST).hour in hours and t.astimezone(IST).weekday() < 5:
+            return t
+        t -= timedelta(hours=1)
+    return now_utc - timedelta(minutes=minutes_ago)
+
+
 def sample(db: Session, engine, source: str):
     """A small realistic log in the provider's own format: two normal sign-ins built from the people's
     digital twins, then a brute-force attack from abroad that succeeds on the sixth try."""
@@ -485,7 +496,7 @@ def sample(db: Session, engine, source: str):
         os_name, _, browser = twin["primary_device"].partition(" / ")
         city = twin["home_city"] if twin["home_city"] in simulator.LOCATIONS else "Chennai"
         country, lat, lon = simulator.LOCATIONS[city]
-        specs.append({"email": f"{username}@innovex.example", "time": now - timedelta(minutes=40 - 10 * i),
+        specs.append({"email": f"{username}@innovex.example", "time": _in_usual_hours(now, twin, 40 - 10 * i),
                       "success": True, "ip": f"49.36.{10 + i}.{20 + i}", "city": city, "cc": "IN", "country": country,
                       "lat": lat, "lon": lon, "os": os_name, "browser": browser,
                       "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0 Safari/537.36"})

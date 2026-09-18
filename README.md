@@ -23,7 +23,7 @@ An **AI Security Analyst** (Claude, with an offline fallback) explains each inci
 
 The front page is a login screen. Nothing is visible until someone signs in.
 
-**SOC admin / owner:** username `TOBY`, password `5429`, **plus a 6-digit code from an authenticator app** (Google or Microsoft Authenticator). On the first admin sign-in a QR code appears: scan it once with your phone. Lost the phone? Run `python backend/reset_admin_2fa.py`. Change the login with `ADMIN_USERNAME` / `ADMIN_PASSWORD`, or turn the app check off with `ADMIN_2FA=false` in `.env`.
+**SOC admin / owner:** username `TOBY`, password `5429`, **plus a 6-digit code from an authenticator app or sent to the admin's email** (set `ADMIN_EMAIL` and a Gmail app password in `.env`) (Google or Microsoft Authenticator). On the first admin sign-in a QR code appears: scan it once with your phone. Lost the phone? Run `python backend/reset_admin_2fa.py`. Change the login with `ADMIN_USERNAME` / `ADMIN_PASSWORD`, or turn the app check off with `ADMIN_2FA=false` in `.env`.
 
 **Staff portal (demo accounts).** A guest signs in as an employee with **password + a 6-digit code sent by email**, and the admin dashboard shows them under **Staff online now** with a live risk score. Their real device, their **device location (GPS / mobile network / Wi-Fi, never typed in)** and wrong password/code attempts are scored. Passing the email code enrols the device as trusted.
 
@@ -95,7 +95,7 @@ The model is saved as files in [`model/`](model/), including a **readable JSON c
 | 🎓 | **Self-learning loop** | Marking an alert "False positive" teaches that person's twin at once; twins follow drift from safe recent sessions; "Retrain with feedback" trains a challenger model that goes live only if it misses no held-out attacks (champion / challenger, versioned) |
 | 👥 | **Peer groups + onboarding** | Add or offboard employees from the Employees page; a new joiner's twin starts from their department's habits until they have 10 sessions of their own; every employee is compared with their peers |
 | 🔌 | **Integrations** | Reads sign-in logs from Okta, Microsoft Entra ID, Google Workspace and AWS CloudTrail (`POST /api/ingest/<source>` with an API key); pushes alerts to Slack, Teams, SMS / WhatsApp (Twilio), a signed webhook and a SIEM (syslog CEF); exports CEF / JSON lines / CSV |
-| 📊 | **Honest evaluation** | ROC and precision-recall curves, cross-validation over 8 fresh datasets (`backend/evaluate.py`), and testing on the real CMU CERT insider-threat dataset (`backend/cert_to_sentinel.py`) |
+| 📊 | **Honest evaluation** | ROC and precision-recall curves, cross-validation over 8 fresh datasets (99.3% ± 1.8% recall), and testing on the **real CMU CERT r4.2 insider-threat dataset**: AUC 0.899 (rules alone 0.525), and all 16 insiders in the test period flagged at least once when 5% of normal days are flagged |
 | 📧 | **Email OTP + access control** | Staff sign in with password + emailed code; admin grants per-system access; no-permission attempts lock the account until unlocked; unfamiliar-email detection; Mail Outbox |
 | 🔐 | **Login** | Admin login guards the dashboard; staff portal for live demo logins, shown as *Staff online now* |
 | 🏠 | **Overview page** | The problem, how it works in 4 steps, live accuracy and a mini threat map |

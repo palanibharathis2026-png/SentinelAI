@@ -31,6 +31,7 @@ export default function Login() {
   const [otp, setOtp] = useState(null); // pending email verification (staff)
   const [adminMfa, setAdminMfa] = useState(null); // pending authenticator code (admin)
   const [qr, setQr] = useState(null);
+  const [mailNote, setMailNote] = useState(null);
   const [code, setCode] = useState("");
   const [flash] = useState(() => {
     try {
@@ -85,6 +86,18 @@ export default function Login() {
       setError(err.message);
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function emailAdminCode() {
+    setError(null);
+    setMailNote(null);
+    try {
+      const res = await api.adminEmailCode(adminMfa.challenge_id);
+      setAdminMfa({ ...adminMfa, email_sent: true, email: res.sent_to });
+      setMailNote(`Code sent to ${res.sent_to}. Check your inbox (and spam).`);
+    } catch (err) {
+      setError(err.message);
     }
   }
 
@@ -166,7 +179,9 @@ export default function Login() {
                   <>
                     <h2 className="text-2xl font-bold">Admin verification</h2>
                     <p className="mt-1 text-sm text-slate-400">
-                      Enter the 6-digit code from your authenticator app (Google or Microsoft Authenticator). It changes every 30 seconds.
+                      {adminMfa.email_sent
+                        ? <>We emailed a 6-digit code to <b className="text-slate-200">{adminMfa.email}</b>. You can also use the code from your authenticator app.</>
+                        : "Enter the 6-digit code from your authenticator app (Google or Microsoft Authenticator). It changes every 30 seconds."}
                     </p>
                   </>
                 ) : (
@@ -200,6 +215,11 @@ export default function Login() {
                     {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
                     {busy || (adminMfa.enrolled ? "Verify and open SOC" : "Link app and open SOC")}
                   </button>
+                  <button type="button" disabled={!!busy} onClick={emailAdminCode}
+                    className="flex w-full items-center justify-center gap-1.5 text-sm text-cyan-300 hover:underline disabled:opacity-50">
+                    <Mail className="h-4 w-4" /> {adminMfa.email_sent ? "Send the email code again" : "Email me a code instead"}
+                  </button>
+                  {mailNote && <div className="text-center text-xs text-emerald-300">{mailNote}</div>}
                 </form>
               </>
             ) : otp ? (

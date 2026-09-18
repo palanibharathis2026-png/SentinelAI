@@ -106,6 +106,7 @@ export const api = {
   labScore: (body) => post("/api/lab/score", body),
   login: (username, password) => post("/api/auth/login", { username, password }),
   adminSecondFactor: (challengeId, code) => post("/api/auth/admin-2fa", { challenge_id: challengeId, code }),
+  adminEmailCode: (challengeId) => post("/api/auth/admin-email-code", { challenge_id: challengeId }),
   security: () => request("/api/security"),
   staffLogin: (username, password, extra = {}) => post("/api/auth/staff-login", { username, password, ...extra }),
   staffOtp: (challengeId, code) => post("/api/auth/staff-otp", { challenge_id: challengeId, code }),

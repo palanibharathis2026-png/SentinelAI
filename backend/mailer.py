@@ -21,7 +21,7 @@ DEMO_DOMAIN = ".demo"  # placeholder addresses such as rahul@staff.demo are neve
 
 def smtp_config() -> dict | None:
     host, user, password = os.getenv("SMTP_HOST"), os.getenv("SMTP_USER"), os.getenv("SMTP_PASSWORD")
-    if not (host and user and password):
+    if not (host and user and password) or password.startswith("PASTE_"):  # placeholder from the template
         return None
     return {"host": host, "port": int(os.getenv("SMTP_PORT", "587")), "user": user, "password": password,
             "sender": os.getenv("MAIL_FROM") or user}
