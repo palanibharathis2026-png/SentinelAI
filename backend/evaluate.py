@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 
 import detection_service as ds
+import model_export
 import simulator
 
 OUT = ds.MODEL_DIR / "evaluation.json"
@@ -103,6 +104,15 @@ def main():
 
     ds.MODEL_DIR.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(result, indent=1), encoding="utf-8")
+    charts = ds.MODEL_DIR / "charts"
+    charts.mkdir(exist_ok=True)
+    if result.get("cross_validation"):
+        (charts / "cross_validation.svg").write_text(model_export.cross_validation_svg(result["cross_validation"]),
+                                                    encoding="utf-8")
+    for name, r in (result.get("external") or {}).items():
+        slug = "".join(c if c.isalnum() else "_" for c in name.lower()).strip("_")
+        (charts / f"{slug}_roc_curve.svg").write_text(
+            model_export.roc_svg(r["curves"], f"ROC curve on {name} (real labelled data)"), encoding="utf-8")
     print(f"Saved {OUT} ({time.time() - started:.0f}s)")
 
 

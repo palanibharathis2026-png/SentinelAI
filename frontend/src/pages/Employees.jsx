@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { Lock, Unlock } from "lucide-react";
 import { api } from "../api.js";
 import { usePolling } from "../hooks/usePolling.js";
+import AddEmployee from "../components/AddEmployee.jsx";
 import TierBadge from "../components/TierBadge.jsx";
 import { fmtDateTime, riskHex } from "../utils/format.js";
 
@@ -16,9 +17,14 @@ export default function Employees() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Employees</h1>
-        <p className="text-sm text-slate-400">Each employee has a Digital Behavioral Twin learned from their past sessions.</p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Employees</h1>
+          <p className="text-sm text-slate-400">
+            Each employee has a Digital Behavioral Twin learned from their past sessions. New joiners start from their team&apos;s habits.
+          </p>
+        </div>
+        <AddEmployee onDone={refresh} />
       </div>
       <div className="card overflow-x-auto p-0">
         <table className="w-full text-sm">

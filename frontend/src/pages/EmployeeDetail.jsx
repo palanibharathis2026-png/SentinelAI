@@ -1,5 +1,5 @@
 import { Link, useParams } from "react-router-dom";
-import { Fingerprint, Lock, Unlock } from "lucide-react";
+import { Fingerprint, Lock, Unlock, UserMinus, UsersRound } from "lucide-react";
 import { Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "../api.js";
 import { usePolling } from "../hooks/usePolling.js";
@@ -39,10 +39,23 @@ export default function EmployeeDetail() {
           <p className="text-sm text-slate-400">{emp.id} · {emp.role} · {emp.department} · {emp.home_city}</p>
           {emp.status === "blocked" && <p className="mt-2 text-sm text-red-300">🔒 {emp.status_reason}</p>}
         </div>
-        <button onClick={toggle} className={emp.status === "blocked" ? "btn-ghost" : "btn-danger"}>
-          {emp.status === "blocked" ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
-          {emp.status === "blocked" ? "Unblock account" : "Block account"}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={toggle} className={emp.status === "blocked" ? "btn-ghost" : "btn-danger"}>
+            {emp.status === "blocked" ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+            {emp.status === "blocked" ? "Unblock account" : "Block account"}
+          </button>
+          {data.username && (
+            <button className="btn-ghost" title="Remove their login and lock the account; history is kept"
+              onClick={async () => {
+                if (window.confirm(`Offboard ${emp.name}? Their login is deleted and the account locked.`)) {
+                  await api.offboard(emp.id);
+                  refresh();
+                }
+              }}>
+              <UserMinus className="h-4 w-4" /> Offboard
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -60,7 +73,28 @@ export default function EmployeeDetail() {
           <TwinRow label="Avg API requests" value={`~${Math.round(twin.avg_api)}`} />
           <TwinRow label="Avg sensitive access" value={`~${twin.avg_sensitive.toFixed(1)}`} />
           <TwinRow label="Weekend activity" value={`${Math.round(twin.weekend_rate * 100)}% of sessions`} />
-          <TwinRow label="Learned from" value={`${twin.sessions} sessions`} />
+          <TwinRow label="Learned from" value={twin.baseline === "peer group"
+            ? `${twin.sessions} own sessions + the ${twin.peer_group} team` : `${twin.sessions} sessions`} />
+          {data.peers?.peers > 0 && (
+            <div className="mt-4">
+              <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold tracking-wider text-slate-400 uppercase">
+                <UsersRound className="h-3.5 w-3.5" /> Compared with {data.peers.department} ({data.peers.peers} peers)
+              </div>
+              {data.peers.rows.map((r) => (
+                <div key={r.metric} className="flex items-center justify-between border-t border-white/5 py-1 text-xs">
+                  <span className="text-slate-400">{r.metric}</span>
+                  <span className="font-mono">
+                    {r.you} <span className="text-slate-500">vs {r.peers ?? "-"}</span>
+                    {r.percentile != null && (
+                      <span className={`ml-2 ${r.percentile >= 90 ? "text-amber-300" : "text-slate-500"}`}>
+                        {r.percentile >= 90 ? "top of team" : `above ${r.percentile}%`}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="card lg:col-span-2">

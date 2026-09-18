@@ -132,3 +132,14 @@ class IntegrationLog(Base):
     event_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(12))  # sent | failed | received
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class StaffAccount(Base):
+    """Staff portal logins created from the dashboard (the demo accounts live in auth.py)."""
+
+    __tablename__ = "staff_accounts"
+
+    username: Mapped[str] = mapped_column(String(40), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("employees.id"), unique=True)
+    password_hash: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime)

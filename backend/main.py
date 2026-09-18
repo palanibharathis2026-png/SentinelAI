@@ -61,6 +61,7 @@ async def lifespan(app: FastAPI):
     init_db()
     with SessionLocal() as db:
         sentinel.bootstrap(db)
+        portal.load_onboarded(db)
     task = asyncio.create_task(live_traffic_loop())
     yield
     task.cancel()
@@ -269,6 +270,7 @@ def get_user(user_id: str, db: Session = Depends(get_db)):
     rows = db.scalars(select(Event).where(Event.user_id == user_id)
                       .order_by(Event.timestamp.desc()).limit(60)).all()
     return {"employee": employee_out(emp), "twin": sentinel.twin(user_id),
+            "peers": sentinel.peer_comparison(user_id), "username": auth.staff_usernames().get(user_id),
             "events": [event_out(e, {emp.id: emp.name}) for e in rows]}
 
 
@@ -498,5 +500,6 @@ def set_live(body: LiveUpdate):
 @app.post("/api/reset")
 def reset(request: Request, db: Session = Depends(get_db)):
     sentinel.reset(db)
+    portal.forget_onboarded()
     audit(db, request, "reset_demo_data")
     return {"status": "reset", "sessions": db.scalar(select(func.count()).select_from(Event))}

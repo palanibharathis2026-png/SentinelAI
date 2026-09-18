@@ -401,7 +401,7 @@ def resolve_user(db: Session, identity: str | None) -> str | None:
         if ident in (x.lower() for x in emails if x):
             return acc.user_id
     local = ident.split("@")[0].split("\\")[-1]
-    for username, (_, uid) in auth.STAFF_ACCOUNTS.items():
+    for uid, username in auth.staff_usernames().items():
         if username in (local, local.split(".")[0]):
             return uid
     for uid, name in db.execute(select(Employee.id, Employee.name)).all():

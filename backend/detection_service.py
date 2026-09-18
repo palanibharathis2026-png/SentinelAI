@@ -33,6 +33,7 @@ import simulator
 from database import reset_db
 from feature_engineering import FEATURE_NAMES, build_twin, compute_features
 from ml_detector import AnomalyDetector, save_detector, split_usage
+from model_export import export_readable
 from models import Employee, Event, Setting
 from risk_engine import TIERS, assess
 
@@ -89,6 +90,7 @@ ALERT_THRESHOLD = 60  # MFA or BLOCK counts as "detected"
 LEARN_WINDOW_DAYS = 30  # twins absorb recent low-risk sessions from this many days
 LEARN_MIN_AGE_HOURS = 12  # a session is learned only once it is finished
 FEEDBACK_WEIGHT = 5  # each analyst-labelled false alarm counts as this many training sessions
+MIN_OWN_SESSIONS = 10  # below this, a twin is completed from the person's peer group (same department)
 VERSIONS_KEY = "model_versions"
 
 FEATURE_DESCRIPTIONS = {
@@ -185,8 +187,9 @@ class SentinelEngine:
                 simulator.save_csv(events, DATA_PATH)
             except OSError:
                 log.warning("Could not write %s", DATA_PATH)
-        # Shift the dataset so its last event is "now" and the dashboard looks live.
-        shift = simulator.now_ist() - max(e["timestamp"] for e in events)
+        # Shift the dataset by whole days so it ends within the last 24 hours and the dashboard looks live.
+        # Whole days keep every session's time of day, so each person's usual working hours stay right.
+        shift = timedelta(days=(simulator.now_ist() - max(e["timestamp"] for e in events)).days)
         for e in events:
             e["timestamp"] = e["timestamp"] + shift
         return events
@@ -251,6 +254,7 @@ class SentinelEngine:
         self.detector = AnomalyDetector().fit(self._train_X)
         self.base_twins = {u: build_twin(self._history_of(u)) for u in users}
         self.twins = dict(self.base_twins)
+        self._build_peer_twins()
         self.version, self.feedback_used = "1.0", 0
         self.metrics = self._evaluate(events, day)
         self.card = self._model_card(events, day, self._train_X)
@@ -320,6 +324,7 @@ class SentinelEngine:
             MODEL_DIR.mkdir(parents=True, exist_ok=True)
             save_detector(self.detector, MODEL_DIR / MODEL_FILE)
             (MODEL_DIR / CARD_FILE).write_text(json.dumps(self.card, indent=2), encoding="utf-8")
+            export_readable(self, MODEL_DIR, FEATURE_NAMES, FEATURE_DESCRIPTIONS)
         except OSError:
             log.warning("Could not save the model to %s", MODEL_DIR)
 
@@ -491,8 +496,65 @@ class SentinelEngine:
         }
 
     # ---------------------------------------------------------------- scoring
+    # ------------------------------------------------------------ peer groups
+    @staticmethod
+    def _department(user_id: str) -> str | None:
+        p = simulator.PROFILES.get(user_id)
+        return p["department"] if p else None
+
+    def _build_peer_twins(self) -> None:
+        """One twin per department (and one for the whole company) from everyone's normal history."""
+        by_dept: dict[str, list[dict]] = {}
+        everyone = []
+        for e in self._events:
+            if self._day(e) < self.train_end_day and not e["scenario"]:
+                by_dept.setdefault(self._department(e["user_id"]) or "Unknown", []).append(e)
+                everyone.append(e)
+        self.peer_twins = {d: build_twin(evs) for d, evs in by_dept.items()}
+        self.peer_twins["*"] = build_twin(everyone)
+        self.peer_members = {d: sorted({e["user_id"] for e in evs}) for d, evs in by_dept.items()}
+
+    def _peer_blend(self, user_id: str, own: dict) -> dict:
+        """A new joiner has little history: habits come from their department, identity facts from themselves."""
+        dept = self._department(user_id)
+        peer = self.peer_twins.get(dept) or self.peer_twins.get("*") or build_twin([])
+        p = simulator.PROFILES.get(user_id, {})
+        home = p.get("home_city") or own["home_city"]
+        country = simulator.LOCATIONS.get(home, ("India",))[0]
+        return {
+            **peer,
+            "sessions": own["sessions"],
+            "active_hours": sorted(set(peer["active_hours"]) | set(own["active_hours"] if own["sessions"] else [])),
+            "known_devices": own["known_devices"],
+            "primary_device": own["primary_device"] if own["sessions"] else "not seen yet",
+            "known_cities": own["known_cities"] or [home],
+            "known_countries": own["known_countries"] or [country],
+            "home_city": own["home_city"] if own["sessions"] else home,
+            "familiar_resources": sorted(set(peer["familiar_resources"]) | set(own["familiar_resources"])),
+            "familiar_actions": sorted(set(peer["familiar_actions"]) | set(own["familiar_actions"])),
+            "baseline": "peer group",
+            "peer_group": dept if dept in self.peer_twins else "whole company",
+        }
+
+    def peer_comparison(self, user_id: str) -> dict:
+        """This person's usual activity next to their department's, with where they rank."""
+        dept = self._department(user_id)
+        members = [u for u in self.peer_members.get(dept, []) if u != user_id]
+        own = self.twin(user_id)
+        rows = []
+        for key, label in (("avg_files", "Files per session"), ("avg_mb", "MB per session"),
+                           ("avg_api", "API calls per session"), ("avg_sensitive", "Sensitive records per session")):
+            peer_values = [self.twins[u][key] for u in members if u in self.twins and self.twins[u]["sessions"]]
+            below = sum(v < own[key] for v in peer_values)
+            rows.append({"metric": label, "you": own[key],
+                         "peers": round(float(np.median(peer_values)), 2) if peer_values else None,
+                         "percentile": round(100 * below / len(peer_values)) if peer_values else None})
+        return {"department": dept, "peers": len(members), "baseline": own.get("baseline", "own history"), "rows": rows}
+
     def twin(self, user_id: str) -> dict:
         t = self.twins.get(user_id) or build_twin([])
+        if t["sessions"] < MIN_OWN_SESSIONS and getattr(self, "peer_twins", None):
+            t = self._peer_blend(user_id, t)
         extra = self.enrolled_devices.get(user_id)
         if extra:
             t = {**t, "known_devices": t["known_devices"] + sorted(extra - set(t["known_devices"]))}

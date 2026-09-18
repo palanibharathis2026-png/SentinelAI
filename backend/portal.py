@@ -5,6 +5,7 @@ real session scored by SentinelAI. Opening a system you have no permission for l
 account until an admin unlocks it; the admin is emailed about logins, denials and requests.
 """
 import hashlib
+import re
 import hmac
 import os
 import secrets
@@ -24,7 +25,7 @@ from common import ALERT_TIERS, audit, event_out, get_employee, get_event, lates
 from database import get_db
 from feature_engineering import haversine_km
 from detection_service import sentinel
-from models import AccessRequest, AuditLog, Event, MailMessage, Setting, StaffAccess
+from models import AccessRequest, AuditLog, Employee, Event, MailMessage, Setting, StaffAccess, StaffAccount
 
 router = APIRouter()
 
@@ -32,7 +33,6 @@ OTP_REQUIRED = os.getenv("OTP_REQUIRED", "true").lower() == "true"
 OTP_SECONDS, OTP_MAX_TRIES = 300, 3
 ONLINE_SECONDS = 45
 ALL_SYSTEMS = sorted(set(simulator.HIGH_VALUE) | {r for rs in simulator.ROLE_RESOURCES.values() for r in rs})
-USERNAMES = {user_id: username for username, (_, user_id) in auth.STAFF_ACCOUNTS.items()}
 
 # In-memory state (fine for a single-process demo server).
 failed_logins: dict[str, int] = {}      # wrong passwords/codes per username since the last success
@@ -61,7 +61,7 @@ def _access(db: Session, user_id: str) -> StaffAccess:
 
 
 def _staff_email(acc: StaffAccess) -> str:
-    return acc.email or f"{USERNAMES.get(acc.user_id, acc.user_id.lower())}@staff.demo"
+    return acc.email or f"{auth.staff_usernames().get(acc.user_id, acc.user_id.lower())}@staff.demo"
 
 
 def _admin_email(db: Session) -> str:
@@ -609,7 +609,7 @@ def staff_active(db: Session = Depends(get_db)):
 def access_overview(db: Session = Depends(get_db)):
     staff = []
     online = set(presence)
-    for user_id, username in sorted(USERNAMES.items()):
+    for user_id, username in sorted(auth.staff_usernames().items()):
         emp = get_employee(db, user_id)
         acc = _access(db, user_id)
         staff.append({"user_id": user_id, "username": username, "name": emp.name, "role": emp.role,
@@ -637,7 +637,7 @@ class AccessUpdate(BaseModel):
 
 @router.put("/api/access/{user_id}")
 def update_access(user_id: str, body: AccessUpdate, request: Request, db: Session = Depends(get_db)):
-    if user_id not in USERNAMES:
+    if user_id not in auth.staff_usernames():
         raise HTTPException(404, "Not a staff portal account")
     acc = _access(db, user_id)
     if body.permissions is not None:
@@ -667,7 +667,7 @@ def unlock(user_id: str, request: Request, db: Session = Depends(get_db)):
     """Unlock a staff account after review. A reviewed denial no longer counts against the live session."""
     emp = get_employee(db, user_id)
     audit(db, request, "unlock", user_id, f"was: {emp.status_reason or emp.status}")
-    failed_logins.pop(USERNAMES.get(user_id, ""), None)
+    failed_logins.pop(auth.staff_usernames().get(user_id, ""), None)
     emp.status, emp.status_reason, emp.status_changed_at = "active", None, simulator.now_ist()
     db.commit()
     entry = presence.get(user_id)
@@ -757,3 +757,115 @@ def outbox(limit: int = Query(50, le=200), db: Session = Depends(get_db)):
     rows = db.scalars(select(MailMessage).order_by(MailMessage.id.desc()).limit(limit)).all()
     return [{"id": m.id, "created_at": m.created_at, "to": m.to, "subject": m.subject, "body": m.body,
              "kind": m.kind, "user_id": m.user_id, "delivery": m.delivery, "error": m.error} for m in rows]
+
+
+# ------------------------------------------------------------------ admin: onboarding
+USERNAME_RE = r"^[a-z][a-z0-9._-]{2,23}$"
+
+
+def load_onboarded(db: Session) -> None:
+    """At start-up: bring back employees and logins created from the dashboard."""
+    for account in db.scalars(select(StaffAccount)).all():
+        emp = db.get(Employee, account.user_id)
+        if emp is None:
+            continue
+        acc = db.get(StaffAccess, emp.id)
+        simulator.register_profile(emp.id, emp.name, emp.department, emp.role, emp.home_city,
+                                   list(acc.permissions or []) if acc else [])
+        auth.ONBOARDED_ACCOUNTS[account.username] = (account.password_hash, emp.id)
+
+
+def forget_onboarded() -> None:
+    """After a demo reset the onboarded employees are gone from the database, so forget them too."""
+    simulator.forget_onboarded()
+    auth.ONBOARDED_ACCOUNTS.clear()
+
+
+def _department_systems(db: Session, department: str) -> list[str]:
+    """Systems most people in the department use: the default permissions for a new joiner."""
+    counts: dict[str, int] = {}
+    members = [p for p in simulator.PROFILES.values() if p["department"] == department]
+    for p in members:
+        for r in p.get("resources", []):
+            counts[r] = counts.get(r, 0) + 1
+    return sorted(r for r, n in counts.items() if n * 2 >= len(members)) if members else []
+
+
+class NewEmployee(BaseModel):
+    name: str
+    department: str
+    role: str
+    home_city: str
+    username: str
+    password: str | None = None
+    email: str | None = None
+    permissions: list[str] | None = None
+
+
+@router.get("/api/employees/options")
+def onboarding_options(db: Session = Depends(get_db)):
+    departments = sorted({e.department for e in db.scalars(select(Employee)).all()})
+    return {"departments": departments, "cities": sorted(simulator.LOCATIONS), "systems": ALL_SYSTEMS,
+            "suggested": {d: _department_systems(db, d) for d in departments}}
+
+
+@router.post("/api/employees")
+def onboard(body: NewEmployee, request: Request, db: Session = Depends(get_db)):
+    """Add an employee with a staff portal login. Their twin starts from their department's habits."""
+    username = body.username.strip().lower()
+    name, department, role = body.name.strip(), body.department.strip(), body.role.strip()
+    if not re.match(USERNAME_RE, username):
+        raise HTTPException(400, "Username: 3-24 characters, lowercase letters, digits, dot, dash or underscore")
+    if auth.staff_account(username):
+        raise HTTPException(409, "That username is taken")
+    if not (2 <= len(name) <= 60 and 2 <= len(department) <= 40 and 2 <= len(role) <= 60):
+        raise HTTPException(400, "Fill in name, department and role")
+    if body.home_city not in simulator.LOCATIONS:
+        raise HTTPException(400, "Choose a home city from the list")
+    password = body.password or secrets.token_urlsafe(9)
+    if len(password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+    email = (body.email or "").strip() or None
+    if email and not _valid_email(email):
+        raise HTTPException(400, "That email address doesn't look right")
+    permissions = body.permissions if body.permissions is not None else _department_systems(db, department)
+    unknown = set(permissions) - set(ALL_SYSTEMS)
+    if unknown:
+        raise HTTPException(400, f"Unknown systems: {', '.join(sorted(unknown))}")
+
+    numbers = [int(e[3:]) for e in db.scalars(select(Employee.id)).all() if e.startswith("EMP") and e[3:].isdigit()]
+    uid = f"EMP{max(numbers, default=0) + 1:03d}"
+    db.add(Employee(id=uid, name=name, department=department, role=role, home_city=body.home_city))
+    db.flush()
+    stored = auth.hash_password(password)
+    db.add(StaffAccount(username=username, user_id=uid, password_hash=stored, created_at=simulator.now_ist()))
+    db.add(StaffAccess(user_id=uid, email=email, permissions=sorted(permissions), known_emails=[email] if email else [],
+                       known_devices=[]))
+    db.commit()
+    simulator.register_profile(uid, name, department, role, body.home_city, sorted(permissions))
+    auth.ONBOARDED_ACCOUNTS[username] = (stored, uid)
+    audit(db, request, "employee_onboarded", uid, f"{name} ({role}, {department}) as '{username}'")
+    if email:
+        mailer.send(db, email, "Welcome to SentinelAI",
+                    f"Hi {name.split()[0]},\n\nYour staff portal account is ready. Username: {username}\n"
+                    "Your admin will give you your first password. Each sign-in also needs a code sent to this email.",
+                    "welcome", uid)
+    return {"user_id": uid, "username": username, "password": password if not body.password else None,
+            "permissions": sorted(permissions), "twin": sentinel.twin(uid)}
+
+
+@router.post("/api/employees/{user_id}/offboard")
+def offboard(user_id: str, request: Request, db: Session = Depends(get_db)):
+    """Someone left: remove their login, end their session and lock the account (history is kept)."""
+    emp = get_employee(db, user_id)
+    account = db.scalar(select(StaffAccount).where(StaffAccount.user_id == user_id))
+    if account:
+        auth.ONBOARDED_ACCOUNTS.pop(account.username, None)
+        db.delete(account)
+    entry = presence.pop(user_id, None)
+    if entry:
+        revoked_sessions.add(entry["event_id"])
+    emp.status, emp.status_reason, emp.status_changed_at = "blocked", "Offboarded: left the company", simulator.now_ist()
+    db.commit()
+    audit(db, request, "employee_offboarded", user_id, emp.name)
+    return {"user_id": user_id, "status": emp.status}

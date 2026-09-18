@@ -1,6 +1,6 @@
 {
  "cross_validation": {
-  "evaluated_at": "2026-09-19T00:37:27",
+  "evaluated_at": "2026-09-19T00:56:30",
   "method": "8 independently generated 45-day company histories; the model is trained from scratch on each and tested on its held-out days",
   "runs": [
    {

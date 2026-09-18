@@ -335,3 +335,23 @@ def load_csv(path: Path) -> list[dict]:
             events.append(e)
     events.sort(key=lambda e: e["timestamp"])
     return events
+
+
+BUILT_IN = set(PROFILES)  # the 15 demo employees; anyone else was onboarded from the dashboard
+
+
+def register_profile(uid: str, name: str, department: str, role: str, home_city: str,
+                     resources: list[str], device: tuple[str, str] = ("Windows 11", "Chrome")) -> dict:
+    """Add an onboarded employee. Working habits start from a colleague in the same department."""
+    template = next((p for p in PROFILES.values() if p["department"] == department and p["id"] in BUILT_IN),
+                    PROFILES["EMP015"])
+    PROFILES[uid] = {**template, "id": uid, "name": name, "department": department, "role": role,
+                     "home_city": home_city, "device": tuple(device), "resources": list(resources)}
+    ROLE_RESOURCES[uid] = list(resources)
+    return PROFILES[uid]
+
+
+def forget_onboarded() -> None:
+    for uid in set(PROFILES) - BUILT_IN:
+        PROFILES.pop(uid, None)
+        ROLE_RESOURCES.pop(uid, None)

@@ -69,9 +69,25 @@ def check_admin(username: str, password: str) -> bool:
             and hmac.compare_digest(password, ADMIN_PASSWORD))
 
 
+# Accounts created on the Employees page (stored in the database, loaded at start-up).
+ONBOARDED_ACCOUNTS: dict[str, tuple[str, str]] = {}
+
+
 def staff_account(username: str) -> tuple[str, str] | None:
     """(password hash, employee_id) for a staff username, or None."""
-    return STAFF_ACCOUNTS.get(username.strip().lower())
+    username = username.strip().lower()
+    return ONBOARDED_ACCOUNTS.get(username) or STAFF_ACCOUNTS.get(username)
+
+
+def staff_usernames() -> dict[str, str]:
+    """employee_id -> username for every staff portal account."""
+    return {uid: name for name, (_, uid) in (STAFF_ACCOUNTS | ONBOARDED_ACCOUNTS).items()}
+
+
+def hash_password(password: str, iterations: int = 200_000) -> str:
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), iterations).hex()
+    return f"pbkdf2_sha256${iterations}${salt}${digest}"
 
 
 def verify_password(password: str, stored: str) -> bool:

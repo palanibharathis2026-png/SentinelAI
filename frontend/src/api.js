@@ -77,6 +77,9 @@ export const api = {
     a.click();
     URL.revokeObjectURL(url);
   },
+  onboardingOptions: () => request("/api/employees/options"),
+  onboard: (body) => post("/api/employees", body),
+  offboard: (id) => post(`/api/employees/${id}/offboard`),
   integrations: () => request("/api/integrations"),
   updateIntegration: (body) => request("/api/integrations", { method: "PUT", body: JSON.stringify(body) }),
   testIntegration: (channel) => post("/api/integrations/test", { channel }),

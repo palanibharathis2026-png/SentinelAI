@@ -80,7 +80,7 @@ A locked account can be unblocked from **Employees**. After 5 wrong admin passwo
 
 ## The trained model
 
-The model is saved as files in [`model/`](model/): `sentinel_model.npz` (all 200 trees, the learned medians and spreads, and the calibration, as plain NumPy arrays with no pickle) and `model_card.json` (algorithms, parameters, what was learned per feature, training data and test results). The **Model & Accuracy** page shows the card and has download buttons. Retrain with `cd backend && python train_model.py --check`, or on your own logs with `--data my_logs.csv`. See [`model/README.md`](model/README.md) to load and use it.
+The model is saved as files in [`model/`](model/), including a **readable JSON copy of every tree** (`sentinel_model.json`), a 40-line scorer that uses only that file (`predict_example.py`), the first tree as if/else rules, per-feature statistics, the training rows and charts. The binary copy is `sentinel_model.npz` (all 200 trees, the learned medians and spreads, and the calibration, as plain NumPy arrays with no pickle) and `model_card.json` (algorithms, parameters, what was learned per feature, training data and test results). The **Model & Accuracy** page shows the card and has download buttons. Retrain with `cd backend && python train_model.py --check`, or on your own logs with `--data my_logs.csv`. See [`model/README.md`](model/README.md) to load and use it.
 
 ## Features
 
@@ -93,6 +93,7 @@ The model is saved as files in [`model/`](model/): `sentinel_model.npz` (all 200
 | 🛡️ | **Security Center** | Controls in force and the audit log of every sign-in and admin decision |
 | 🧠 | **Trained model files** | `model/sentinel_model.npz` + `model_card.json`, shown and downloadable on the Model page |
 | 🎓 | **Self-learning loop** | Marking an alert "False positive" teaches that person's twin at once; twins follow drift from safe recent sessions; "Retrain with feedback" trains a challenger model that goes live only if it misses no held-out attacks (champion / challenger, versioned) |
+| 👥 | **Peer groups + onboarding** | Add or offboard employees from the Employees page; a new joiner's twin starts from their department's habits until they have 10 sessions of their own; every employee is compared with their peers |
 | 🔌 | **Integrations** | Reads sign-in logs from Okta, Microsoft Entra ID, Google Workspace and AWS CloudTrail (`POST /api/ingest/<source>` with an API key); pushes alerts to Slack, Teams, SMS / WhatsApp (Twilio), a signed webhook and a SIEM (syslog CEF); exports CEF / JSON lines / CSV |
 | 📊 | **Honest evaluation** | ROC and precision-recall curves, cross-validation over 8 fresh datasets (`backend/evaluate.py`), and testing on the real CMU CERT insider-threat dataset (`backend/cert_to_sentinel.py`) |
 | 📧 | **Email OTP + access control** | Staff sign in with password + emailed code; admin grants per-system access; no-permission attempts lock the account until unlocked; unfamiliar-email detection; Mail Outbox |

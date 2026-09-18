@@ -1,7 +1,7 @@
 {
   "name": "SentinelAI behavioural anomaly detector",
   "version": "1.0",
-  "trained_at": "2026-09-18T22:25:39",
+  "trained_at": "2026-09-19T00:57:05",
   "type": "Unsupervised anomaly detection ensemble (trained only on normal behaviour)",
   "algorithms": [
     {
@@ -28,26 +28,26 @@
     "median_normal_session": 0,
     "p95_normal_session": 25,
     "forest_raw": [
-      0.3681,
-      0.5426
+      0.3726,
+      0.5403
     ],
     "distance_raw": [
-      0.4351,
-      1.4379
+      0.4392,
+      1.3962
     ]
   },
   "features": [
     {
       "name": "hours_outside_usual_window",
       "description": "Hours between the login time and the person's usual working window",
-      "split_share": 0.0955,
+      "split_share": 0.0886,
       "normal_median": 0.0,
-      "normal_spread": 0.6374
+      "normal_spread": 0.6314
     },
     {
       "name": "unusual_weekend_login",
       "description": "1 if a weekend login by someone who rarely works weekends",
-      "split_share": 0.0255,
+      "split_share": 0.0252,
       "normal_median": 0.0,
       "normal_spread": 0.25
     },
@@ -68,49 +68,49 @@
     {
       "name": "new_city",
       "description": "1 if this person never logged in from this city",
-      "split_share": 0.0446,
+      "split_share": 0.0441,
       "normal_median": 0.0,
       "normal_spread": 0.25
     },
     {
       "name": "travel_speed_log",
       "description": "log(1 + km/h) needed to travel from the last trusted session",
-      "split_share": 0.0862,
+      "split_share": 0.0797,
       "normal_median": 0.0,
       "normal_spread": 1.0276
     },
     {
       "name": "failed_logins",
       "description": "Failed attempts before the successful login",
-      "split_share": 0.0513,
+      "split_share": 0.0515,
       "normal_median": 0.0,
       "normal_spread": 0.3634
     },
     {
       "name": "download_ratio_log",
       "description": "log of files downloaded vs. this person's average",
-      "split_share": 0.1641,
+      "split_share": 0.1711,
       "normal_median": 0.019,
       "normal_spread": 0.3956
     },
     {
       "name": "data_volume_ratio_log",
       "description": "log of MB downloaded vs. this person's average",
-      "split_share": 0.1725,
+      "split_share": 0.1732,
       "normal_median": 0.0126,
       "normal_spread": 0.4561
     },
     {
       "name": "api_ratio_log",
       "description": "log of API calls vs. this person's average",
-      "split_share": 0.1661,
+      "split_share": 0.1785,
       "normal_median": 0.0044,
       "normal_spread": 0.3279
     },
     {
       "name": "sensitive_ratio_log",
       "description": "log of sensitive records opened vs. this person's average",
-      "split_share": 0.1724,
+      "split_share": 0.1664,
       "normal_median": -0.157,
       "normal_spread": 0.516
     },
@@ -124,13 +124,14 @@
     {
       "name": "unfamiliar_admin_actions",
       "description": "Number of admin actions this person never performed before",
-      "split_share": 0.0219,
+      "split_share": 0.0216,
       "normal_median": 0.0,
       "normal_spread": 0.25
     }
   ],
   "training_data": {
     "source": "Synthetic company activity from simulator.py (data/synthetic_security_events.csv)",
+    "span_days": 46,
     "sha256": "e1b96a70477ccdcb93864eaa569f71dfd28a9451a84bee6180c19d1806d9734e",
     "employees": 15,
     "sessions_total": 700,
@@ -140,7 +141,7 @@
     "analyst_feedback_sessions": 0,
     "feedback_weight": 5,
     "training_attacks": 0,
-    "test_days": "35+ (held out, contains planted attacks)"
+    "test_days": "35+ (held out, contains the attacks)"
   },
   "evaluation": {
     "test_sessions": 190,
@@ -207,6 +208,16 @@
         "caught": 3,
         "total": 3
       }
+    },
+    "auc": {
+      "ml_only": 1.0,
+      "rules_only": 1.0,
+      "hybrid": 1.0
+    },
+    "average_precision": {
+      "ml_only": 1.0,
+      "rules_only": 1.0,
+      "hybrid": 1.0
     }
   },
   "files": {
