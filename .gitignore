@@ -25,3 +25,6 @@ Thumbs.db
 # Only accuracy results (model/evaluation.json) are published.
 data/cert*
 cert/
+
+# Local retrains from model/sentinel_model.py (the app never reads these)
+model/retrained/

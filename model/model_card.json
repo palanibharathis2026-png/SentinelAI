@@ -1,7 +1,7 @@
 {
   "name": "SentinelAI behavioural anomaly detector",
   "version": "1.0",
-  "trained_at": "2026-09-19T01:08:26",
+  "trained_at": "2026-09-19T01:19:59",
   "type": "Unsupervised anomaly detection ensemble (trained only on normal behaviour)",
   "algorithms": [
     {

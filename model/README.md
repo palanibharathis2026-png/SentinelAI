@@ -5,6 +5,8 @@ This folder is the trained model: every number it learned, in files you can open
 | File | Open it to see |
 |---|---|
 | [`sentinel_model.json`](sentinel_model.json) | **The whole model as text**: all 200 Isolation Forest trees (every split feature and threshold), the Robust Distance medians and spreads, and the calibration. Same content as the `.npz`. |
+| [`sentinel_model.py`](sentinel_model.py) | **The model's code** in one self-contained file (NumPy only): train, load, score and explain. It doesn't touch the app. Try `python model/sentinel_model.py explain 5 0 1 1 1 8.5 0 3.2 3.2 1 2 2 1` |
+| [`verify_model.py`](verify_model.py) | Proves `sentinel_model.py` gives the same scores as the app's model (and retrains it from scratch to show the same result) |
 | [`predict_example.py`](predict_example.py) | Scores sessions using only `sentinel_model.json` and NumPy, with no SentinelAI code, so you can see exactly how a risk number is produced. Run `python model/predict_example.py`. |
 | [`tree_000.txt`](tree_000.txt) | The first of the 200 trees written out as `if / else` rules |
 | [`feature_statistics.csv`](feature_statistics.csv) | For each of the 13 features: what a normal session looks like (median and spread) and how much the forest uses it |
