@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { LogIn, Siren, Volume2, VolumeX, X } from "lucide-react";
+import { BellRing, LogIn, Siren, Volume2, VolumeX, X } from "lucide-react";
 import { api } from "../api.js";
 import { riskHex } from "../utils/format.js";
 
@@ -57,10 +57,22 @@ function playChime() {
   }
 }
 
+// Windows / macOS notification, so alerts are seen even when the dashboard tab is in the background.
+function desktopNotify(title, body) {
+  try {
+    if ("Notification" in window && Notification.permission === "granted" && document.hidden) {
+      new Notification(title, { body });
+    }
+  } catch {
+    /* notifications unavailable */
+  }
+}
+
 // Watches for new MFA/BLOCK alerts and new staff-portal logins, and pops a toast (plus a sound) for each.
 export default function AlertToasts() {
   const [toasts, setToasts] = useState([]);
   const [muted, setMuted] = useState(readMuted);
+  const [notifyState, setNotifyState] = useState(() => ("Notification" in window ? Notification.permission : "unsupported"));
   const seen = useRef(null);
   const seenLogins = useRef(null);
   const mutedRef = useRef(muted);
@@ -86,6 +98,7 @@ export default function AlertToasts() {
         fresh.forEach((s) => seenLogins.current.add(s.event_id));
         if (fresh.length) {
           if (!mutedRef.current) playChime();
+          fresh.forEach((s) => desktopNotify(`${s.name} logged in`, `${s.city} · ${s.device} · risk ${s.risk}`));
           push(fresh.map((s) => ({ ...s, id: s.event_id, key: `login-${s.event_id}`, kind: "login" })));
         }
       } catch {
@@ -105,6 +118,7 @@ export default function AlertToasts() {
         fresh.forEach((a) => seen.current.add(a.id));
         if (fresh.length) {
           if (!mutedRef.current) playAlarm(fresh[0].tier);
+          fresh.slice(0, 3).forEach((a) => desktopNotify(`${a.tier === "BLOCK" ? "BLOCKED" : "MFA"}: ${a.name} (risk ${a.risk})`, a.threat || "Anomalous session"));
           push(fresh.slice(0, 3).map((a) => ({ ...a, key: `alert-${a.id}`, kind: "alert" })));
         }
       } catch {
@@ -130,8 +144,21 @@ export default function AlertToasts() {
     });
   }
 
+  async function enableDesktop() {
+    try {
+      setNotifyState(await Notification.requestPermission());
+    } catch {
+      setNotifyState("denied");
+    }
+  }
+
   return (
     <>
+      {notifyState === "default" && (
+        <button onClick={enableDesktop} className="btn-ghost text-xs" title="Show Windows notifications for alerts">
+          <BellRing className="h-4 w-4 text-amber-300" /> Desktop alerts
+        </button>
+      )}
       <button onClick={toggleMute} className="btn-ghost text-xs" title="Alarm sound for new alerts">
         {muted ? <VolumeX className="h-4 w-4 text-slate-500" /> : <Volume2 className="h-4 w-4 text-fuchsia-300" />}
         {muted ? "Muted" : "Sound on"}

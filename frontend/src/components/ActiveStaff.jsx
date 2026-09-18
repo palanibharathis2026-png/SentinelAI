@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Laptop, MapPin, UsersRound } from "lucide-react";
+import { Laptop, Lock, LogOut, MapPin, UsersRound } from "lucide-react";
 import { api } from "../api.js";
 import { usePolling } from "../hooks/usePolling.js";
 import TierBadge from "./TierBadge.jsx";
@@ -7,8 +8,24 @@ import { fmtTime } from "../utils/format.js";
 
 // Staff who are signed in to the employee portal right now (real logins, not simulated).
 export default function ActiveStaff() {
-  const { data } = usePolling(api.activeStaff, 3000);
+  const { data, refresh } = usePolling(api.activeStaff, 3000);
+  const [busy, setBusy] = useState(null);
   const { data: health } = usePolling(api.health, 0);
+
+  // Live SOC controls: act on a signed-in person without leaving the dashboard.
+  async function control(e, userId, action) {
+    e.preventDefault();
+    e.stopPropagation();
+    setBusy(userId + action);
+    try {
+      if (action === "lock") await api.block(userId, "Locked live from the Staff online panel");
+      else await api.forceSignout(userId);
+      await refresh();
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const staff = data || [];
   const portal = health?.lan_ip ? `http://${health.lan_ip}:${window.location.port || 80}` : window.location.origin;
 
@@ -46,6 +63,16 @@ export default function ActiveStaff() {
                   <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {s.city}</span>
                   <span className="flex items-center gap-1"><Laptop className="h-3 w-3" /> {s.device}</span>
                   <span>{s.files_downloaded} files</span>
+                </div>
+                <div className="mt-2 flex gap-2">
+                  {s.account_status !== "blocked" && (
+                    <button onClick={(e) => control(e, s.user_id, "lock")} disabled={!!busy} className="flex items-center gap-1 rounded-md border border-red-400/40 bg-red-500/10 px-2 py-1 text-xs text-red-200 hover:bg-red-500/20">
+                      <Lock className="h-3 w-3" /> Lock account
+                    </button>
+                  )}
+                  <button onClick={(e) => control(e, s.user_id, "signout")} disabled={!!busy} className="flex items-center gap-1 rounded-md border border-white/15 px-2 py-1 text-xs text-slate-300 hover:bg-white/5">
+                    <LogOut className="h-3 w-3" /> Force sign-out
+                  </button>
                 </div>
               </Link>
             </li>

@@ -14,6 +14,15 @@ export default function Login() {
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [flash] = useState(() => {
+    try {
+      const msg = sessionStorage.getItem("sentinel-flash");
+      sessionStorage.removeItem("sentinel-flash");
+      return msg;
+    } catch {
+      return null;
+    }
+  });
 
   function switchMode(m) {
     setMode(m);
@@ -109,6 +118,10 @@ export default function Login() {
                 ? "Sign in to the company workspace. Your session is checked against your behavioural twin."
                 : "Owner / admin access to the SentinelAI Security Operations Center."}
             </p>
+
+            {flash && (
+              <div className="mt-4 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">{flash}</div>
+            )}
 
             <form onSubmit={submit} className="mt-6 space-y-4">
               <label className="block text-sm text-slate-300">

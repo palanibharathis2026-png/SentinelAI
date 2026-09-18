@@ -9,6 +9,7 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true, // also reachable from phones/laptops on the same Wi-Fi (staff portal demo)
+    allowedHosts: [".trycloudflare.com"], // public demo link made by share.bat
     proxy: { "/api": process.env.VITE_API_PROXY || "http://127.0.0.1:8000" },
   },
 });

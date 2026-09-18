@@ -8,7 +8,7 @@ from collections import Counter
 
 import numpy as np
 
-from simulator import TAMPERING_ACTIONS
+from simulator import HONEYTOKENS, TAMPERING_ACTIONS
 
 FEATURE_NAMES = [
     "hours_outside_usual_window",
@@ -186,5 +186,6 @@ def compute_features(event: dict, twin: dict, prev: dict | None) -> tuple[np.nda
         "actions": actions,
         "new_actions": new_actions,
         "tampering": tampering,
+        "honeytokens": [r for r in resources if r in HONEYTOKENS],
     }
     return vector, facts

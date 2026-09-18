@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  AlertTriangle, Briefcase, CheckCircle2, Clock, Database, FileDown, Laptop, Loader2, Lock, LogOut, MapPin,
-  PackageOpen, ShieldCheck, ShieldOff,
+  AlertTriangle, Briefcase, CheckCircle2, Clock, Database, FileDown, FileSpreadsheet, FolderOpen, Laptop, Loader2,
+  Lock, LogOut, MapPin, PackageOpen, ShieldCheck, ShieldOff, Trophy,
 } from "lucide-react";
 import { api } from "../api.js";
 import { setAuth } from "../auth.js";
@@ -148,6 +148,26 @@ export default function StaffPortal() {
           </div>
         </div>
 
+        <div className="card">
+          <div className="card-title"><FolderOpen className="h-4 w-4 text-amber-300" /> Shared drive</div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {me.shared_files.map((f) => (
+              <button key={f} onClick={() => act("open", f, `Opened ${f}`)} disabled={!!busy} className="flex items-center gap-2 rounded-lg border border-white/10 bg-slate-950/50 px-3 py-2.5 text-left text-sm hover:border-amber-300/50 disabled:opacity-50">
+                <FileSpreadsheet className="h-4 w-4 shrink-0 text-amber-300" />
+                <span className="truncate">{f}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-fuchsia-400/30 bg-gradient-to-r from-fuchsia-500/10 to-indigo-500/10 p-4 text-sm">
+          <div className="flex items-center gap-2 font-semibold text-fuchsia-200"><Trophy className="h-4 w-4" /> Challenge: can you beat SentinelAI?</div>
+          <p className="mt-1 text-slate-300">
+            Try to take as much data as you can without getting caught. Downloading slowly might work… or might not.
+            Files taken so far: <b>{session.files_downloaded}</b>
+          </p>
+        </div>
+
         <div className="card border-rose-500/30">
           <div className="card-title"><AlertTriangle className="h-4 w-4 text-rose-400" /> Try something suspicious (demo)</div>
           <div className="mb-3 flex flex-wrap gap-2">
@@ -157,7 +177,12 @@ export default function StaffPortal() {
               </button>
             ))}
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <button onClick={() => act("extra", null, "Downloaded an extra batch")} disabled={!!busy} className="rounded-xl border border-orange-400/40 bg-orange-500/10 p-4 text-left hover:bg-orange-500/20 disabled:opacity-50">
+              <FileDown className="mb-2 h-5 w-5 text-orange-300" />
+              <div className="font-semibold">Download an extra batch</div>
+              <div className="text-xs text-slate-400">3x your normal files</div>
+            </button>
             <button onClick={() => act("export", null, "Exported company data")} disabled={!!busy} className="rounded-xl border border-rose-400/40 bg-rose-500/10 p-4 text-left hover:bg-rose-500/20 disabled:opacity-50">
               <PackageOpen className="mb-2 h-5 w-5 text-rose-300" />
               <div className="font-semibold">Export ALL company data</div>

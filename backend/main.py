@@ -333,10 +333,22 @@ class LoginRequest(BaseModel):
     password: str
 
 
+# Slow down password guessing on the admin login (matters when the demo is shared by a public link).
+admin_failures: list[float] = []
+ADMIN_MAX_FAILURES, ADMIN_LOCK_SECONDS = 5, 120
+
+
 @app.post("/api/auth/login")
 def admin_login(body: LoginRequest):
+    now = time.time()
+    admin_failures[:] = [t for t in admin_failures if now - t < ADMIN_LOCK_SECONDS]
+    if len(admin_failures) >= ADMIN_MAX_FAILURES:
+        wait = int(ADMIN_LOCK_SECONDS - (now - admin_failures[0])) + 1
+        raise HTTPException(429, f"Too many wrong attempts. Admin login is paused for {wait} seconds.")
     if not auth.check_admin(body.username, body.password):
+        admin_failures.append(now)
         raise HTTPException(401, "Wrong username or password")
+    admin_failures.clear()
     name = auth.ADMIN_USERNAME
     return {"token": auth.issue("admin", name, name), "role": "admin", "name": name}
 
@@ -348,6 +360,8 @@ failed_logins: dict[str, int] = {}
 presence: dict[str, dict] = {}
 presence_lock = threading.Lock()
 ONLINE_SECONDS = 45
+# Portal sessions the SOC has force-signed-out; their tokens stop working.
+revoked_sessions: set[int] = set()
 
 
 class StaffLoginRequest(LoginRequest):
@@ -400,12 +414,16 @@ def _staff_view(db: Session, user_id: str, event_id: int) -> dict:
                     "resources": row.resources or [], "actions": row.actions or []},
         "security_check": check,
         "usual_systems": p["resources"],
+        "shared_files": simulator.HONEYTOKENS,
         "all_systems": sorted(set(simulator.HIGH_VALUE) | {r for rs in simulator.ROLE_RESOURCES.values() for r in rs}),
     }
 
 
 def _staff_claims(request: Request) -> dict:
-    return request.state.user
+    claims = request.state.user
+    if claims.get("event_id") in revoked_sessions:
+        raise HTTPException(401, "You were signed out by the security team.")
+    return claims
 
 
 @app.get("/api/staff/me")
@@ -453,6 +471,12 @@ def staff_activity(body: StaffActivity, request: Request, db: Session = Depends(
         row.mb_downloaded = round(row.mb_downloaded + files * p["mb_per_file"], 1)
         row.api_calls += max(5, p["api"] // 3)
         resources.update(p["resources"][:2])
+    elif body.kind == "extra":
+        files = p["files"] * 3
+        row.files_downloaded += files
+        row.mb_downloaded = round(row.mb_downloaded + files * p["mb_per_file"], 1)
+        row.sensitive_access += max(1, files // 10)
+        row.api_calls += p["api"] // 2
     elif body.kind == "open":
         if not body.system:
             raise HTTPException(400, "Choose a system to open")
@@ -481,6 +505,38 @@ def staff_logout(request: Request):
     with presence_lock:
         presence.pop(_staff_claims(request)["sub"], None)
     return {"status": "logged out"}
+
+
+@app.post("/api/staff/{user_id}/signout")
+def force_signout(user_id: str):
+    """SOC action: end someone's portal session right now."""
+    with presence_lock:
+        entry = presence.pop(user_id, None)
+    if not entry:
+        raise HTTPException(404, "That person is not signed in")
+    revoked_sessions.add(entry["event_id"])
+    return {"status": "signed out", "user_id": user_id}
+
+
+@app.get("/api/staff/challenge")
+def challenge(db: Session = Depends(get_db)):
+    """'Steal data without getting caught' scoreboard for guests who tried the staff portal (last 24 h)."""
+    since = _latest_time(db) - timedelta(hours=24)
+    rows = db.scalars(select(Event).where(Event.source == "portal", Event.timestamp >= since)
+                      .order_by(Event.timestamp.desc())).all()
+    names = _names(db)
+    attempts = [{
+        "event_id": e.id, "name": names.get(e.user_id, e.user_id), "timestamp": e.timestamp,
+        "mb": e.mb_downloaded, "files": e.files_downloaded, "risk": e.risk, "tier": e.tier,
+        "caught": e.tier in ALERT_TIERS, "threat": e.threat,
+    } for e in rows]
+    tried = [a for a in attempts if a["files"] > 0 or a["caught"]]
+    return {
+        "attempts": len(tried),
+        "caught": sum(a["caught"] for a in tried),
+        "best_undetected": sorted([a for a in tried if not a["caught"]], key=lambda a: -a["mb"])[:5],
+        "recent": tried[:8],
+    }
 
 
 @app.get("/api/staff/active")

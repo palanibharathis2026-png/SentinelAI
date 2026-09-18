@@ -115,6 +115,9 @@ ROLE_ACTIONS = {
     "EMP012": ["reset_user_password", "grant_access"],
     "EMP014": ["restart_service", "deploy_release"],
 }
+# Decoy files planted on the shared drive. No real employee has a reason to open them,
+# so touching one is a near-certain sign of snooping (deception technology).
+HONEYTOKENS = ["CEO_Salaries_2026.xlsx", "Merger_Plan_CONFIDENTIAL.pdf", "Admin_Passwords_backup.txt"]
 # Attackers switch these off to stay hidden or keep access.
 TAMPERING_ACTIONS = {"disable_audit_logs", "disable_mfa", "delete_backups"}
 

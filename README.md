@@ -40,7 +40,15 @@ The front page is a login screen. Nothing is visible until someone signs in.
 | `sneha` | `5082` | Sneha Patel | Content Lead | Mumbai |
 | `aditya` | `6239` | Aditya Rao | Frontend Developer | Chennai |
 
-Guests on the same Wi-Fi open `http://<your-laptop-ip>:5173` (shown on the dashboard and by `start.bat`). If the network blocks device-to-device traffic, use a second browser window on the same laptop. A locked account can be unblocked from **Employees**.
+**How guests reach it**
+
+| Situation | What to do |
+|---|---|
+| Guest on the **same Wi-Fi / hotspot** | Open `http://<your-laptop-ip>:5173` (shown on the dashboard and by `start.bat`) |
+| Guest on **mobile data or another network**, or college Wi-Fi that blocks device-to-device traffic | Double-click **`share.bat`** (after `start.bat`). It creates a temporary public `https://….trycloudflare.com` link, copies it to the clipboard, and switches it off when the window is closed |
+| No network at all | Use a second browser window on the same laptop |
+
+A locked account can be unblocked from **Employees**. After 5 wrong admin passwords the admin login pauses for 2 minutes.
 
 ![Login](docs/screenshots/login.png)
 
@@ -52,6 +60,10 @@ Guests on the same Wi-Fi open `http://<your-laptop-ip>:5173` (shown on the dashb
 
 | | Feature | What it shows |
 |---|---|---|
+| 🪤 | **Decoy files (honeytokens)** | Tempting files on the shared drive (`CEO_Salaries_2026.xlsx` …). Opening one is a near-certain sign of snooping: +60 risk instantly |
+| 🏆 | **Beat-SentinelAI challenge** | Guests try to take data without getting caught; the dashboard counts attempts vs. caught |
+| 🛑 | **Live SOC controls** | Lock an account or force-sign-out a signed-in person straight from *Staff online now* |
+| 🖥️ | **Desktop notifications** | Windows notifications for blocks and logins, even when the dashboard tab is in the background |
 | 🔐 | **Login** | Admin login guards the dashboard; staff portal for live demo logins, shown as *Staff online now* |
 | 🏠 | **Overview page** | The problem, how it works in 4 steps, live accuracy and a mini threat map |
 | 📊 | **SOC dashboard** | Live sessions, risk timeline, open alerts, riskiest employees, department heatmap |
@@ -182,7 +194,7 @@ Put `ANTHROPIC_API_KEY=...` in `.env` at the repo root. Without a key, or if the
 
 ## Demo script (3-5 minutes)
 
-1. **Login as TOBY.** Hand a friend your phone or a second browser: they sign in to the **Staff portal** (e.g. `rahul` / `1957`). A green *Staff logged in* toast appears and they show up under **Staff online now**. Ask them to click *Export ALL company data*: their account is locked live and the alarm goes off.
+1. **Login as TOBY.** Hand a friend your phone or a second browser: they sign in to the **Staff portal** (e.g. `rahul` / `1957`). A green *Staff logged in* toast appears and they show up under **Staff online now**. Ask them to click *Export ALL company data* or open a file on the *Shared drive* (a decoy): their account is locked live and the alarm goes off. Challenge the audience to beat SentinelAI and show the scoreboard.
 2. **Overview.** *"The password was correct. The behavior was not."* Walk through the 4 steps.
 3. **SOC dashboard.** Live traffic is on and normal sessions stream in green. *"Every dot is a login compared with that employee's digital twin."*
 4. **Attack simulator → Account takeover.** The alarm sounds, a toast pops up, the session appears as a red BLOCK and the account is auto-locked.

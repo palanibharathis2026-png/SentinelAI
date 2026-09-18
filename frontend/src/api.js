@@ -5,11 +5,33 @@ const BASE = import.meta.env.VITE_API_URL || "";
 
 async function request(path, options = {}) {
   const token = getAuth()?.token;
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    ...options,
-  });
-  if (res.status === 401 && token) setAuth(null); // expired or server restarted: back to the login page
+  let res;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      ...options,
+    });
+  } catch {
+    throw new Error("Can't reach the SentinelAI server. Check the internet connection, or ask the host for a fresh link.");
+  }
+  if (res.status === 502 || res.status === 504) {
+    throw new Error("The SentinelAI server is not running right now. Ask the host to start it (start.bat).");
+  }
+  if (res.status === 401 && token) {
+    // Expired, server restarted, or signed out by the SOC: back to the login page with the reason.
+    let reason = "Your session ended. Please sign in again.";
+    try {
+      reason = (await res.clone().json()).detail || reason;
+    } catch {
+      /* not JSON */
+    }
+    try {
+      sessionStorage.setItem("sentinel-flash", reason);
+    } catch {
+      /* storage blocked */
+    }
+    setAuth(null);
+  }
   if (!res.ok) {
     let message = res.statusText;
     try {
@@ -55,4 +77,6 @@ export const api = {
   staffActivity: (kind, system) => post("/api/staff/me/activity", { kind, system: system || null }),
   staffLogout: () => post("/api/staff/me/logout"),
   activeStaff: () => request("/api/staff/active"),
+  forceSignout: (userId) => post(`/api/staff/${userId}/signout`),
+  challenge: () => request("/api/staff/challenge"),
 };

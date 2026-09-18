@@ -7,6 +7,7 @@ import RiskTimeline from "../components/RiskTimeline.jsx";
 import AlertFeed from "../components/AlertFeed.jsx";
 import ActiveStaff from "../components/ActiveStaff.jsx";
 import AttackSimulator from "../components/AttackSimulator.jsx";
+import ChallengeBoard from "../components/ChallengeBoard.jsx";
 import DepartmentHeatmap from "../components/DepartmentHeatmap.jsx";
 import ThreatMap from "../components/ThreatMap.jsx";
 import { TIER_STYLES, riskHex } from "../utils/format.js";
@@ -93,6 +94,7 @@ export default function Dashboard() {
 
         <div className="space-y-6">
           <ActiveStaff />
+          <ChallengeBoard />
           <AttackSimulator onLaunched={refreshAll} />
           <div className="card">
             <div className="card-title">Riskiest employees (24h)</div>
