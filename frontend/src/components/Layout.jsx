@@ -13,6 +13,7 @@ const NAV = [
   { to: "/employees", label: "Employees", icon: Users },
   { to: "/access", label: "Access Control", icon: KeyRound },
   { to: "/mail", label: "Mail Outbox", icon: Mail },
+  { to: "/security", label: "Security Center", icon: ShieldCheck },
   { to: "/model", label: "Model & Accuracy", icon: BrainCircuit },
 ];
 

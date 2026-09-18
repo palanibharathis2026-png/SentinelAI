@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { BrainCircuit, Loader2, RotateCcw, Target } from "lucide-react";
 import { api } from "../api.js";
+import ModelCard from "../components/ModelCard.jsx";
 import { usePolling } from "../hooks/usePolling.js";
 import { TIER_STYLES, pct } from "../utils/format.js";
 
@@ -43,7 +44,7 @@ export default function Model() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Model &amp; accuracy</h1>
+          <h1 className="gradient-text text-3xl font-bold">Model &amp; accuracy</h1>
           <p className="text-sm text-slate-400">
             Trained on {m.trained_on} normal sessions. Evaluated on the {m.test_sessions} most recent sessions, which contain{" "}
             {m.test_attacks} planted attacks the model never saw. An alert means risk ≥ {m.alert_threshold}.
@@ -53,6 +54,8 @@ export default function Model() {
           {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Reset demo data
         </button>
       </div>
+
+      <ModelCard />
 
       <div className="card overflow-x-auto">
         <div className="card-title">

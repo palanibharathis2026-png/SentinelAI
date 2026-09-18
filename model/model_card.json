@@ -1,0 +1,219 @@
+{
+  "name": "SentinelAI behavioural anomaly detector",
+  "version": "1.0",
+  "trained_at": "2026-09-18T21:55:12",
+  "type": "Unsupervised anomaly detection ensemble (trained only on normal behaviour)",
+  "algorithms": [
+    {
+      "name": "Isolation Forest",
+      "role": "Finds unusual combinations of features",
+      "params": {
+        "trees": 200,
+        "sample_size": 256,
+        "max_depth": 8,
+        "random_state": 42
+      }
+    },
+    {
+      "name": "Robust Distance (median / MAD)",
+      "role": "Measures how extreme each value is",
+      "params": {
+        "scale_floor": 0.25,
+        "direction": "upward deviations only"
+      }
+    }
+  ],
+  "combination": "ML risk = max(calibrated forest score, calibrated distance score); final risk = 1 - (1 - ML/100) x (1 - rules/100)",
+  "calibration": {
+    "median_normal_session": 0,
+    "p95_normal_session": 25,
+    "forest_raw": [
+      0.3681,
+      0.5426
+    ],
+    "distance_raw": [
+      0.4351,
+      1.4379
+    ]
+  },
+  "features": [
+    {
+      "name": "hours_outside_usual_window",
+      "description": "Hours between the login time and the person's usual working window",
+      "split_share": 0.0955,
+      "normal_median": 0.0,
+      "normal_spread": 0.6374
+    },
+    {
+      "name": "unusual_weekend_login",
+      "description": "1 if a weekend login by someone who rarely works weekends",
+      "split_share": 0.0255,
+      "normal_median": 0.0,
+      "normal_spread": 0.25
+    },
+    {
+      "name": "new_device",
+      "description": "1 if the OS/browser was never used by this person",
+      "split_share": 0.0,
+      "normal_median": 0.0,
+      "normal_spread": 0.25
+    },
+    {
+      "name": "new_country",
+      "description": "1 if this person never logged in from this country",
+      "split_share": 0.0,
+      "normal_median": 0.0,
+      "normal_spread": 0.25
+    },
+    {
+      "name": "new_city",
+      "description": "1 if this person never logged in from this city",
+      "split_share": 0.0446,
+      "normal_median": 0.0,
+      "normal_spread": 0.25
+    },
+    {
+      "name": "travel_speed_log",
+      "description": "log(1 + km/h) needed to travel from the last trusted session",
+      "split_share": 0.0862,
+      "normal_median": 0.0,
+      "normal_spread": 1.0276
+    },
+    {
+      "name": "failed_logins",
+      "description": "Failed attempts before the successful login",
+      "split_share": 0.0513,
+      "normal_median": 0.0,
+      "normal_spread": 0.3634
+    },
+    {
+      "name": "download_ratio_log",
+      "description": "log of files downloaded vs. this person's average",
+      "split_share": 0.1641,
+      "normal_median": 0.019,
+      "normal_spread": 0.3956
+    },
+    {
+      "name": "data_volume_ratio_log",
+      "description": "log of MB downloaded vs. this person's average",
+      "split_share": 0.1725,
+      "normal_median": 0.0126,
+      "normal_spread": 0.4561
+    },
+    {
+      "name": "api_ratio_log",
+      "description": "log of API calls vs. this person's average",
+      "split_share": 0.1661,
+      "normal_median": 0.0044,
+      "normal_spread": 0.3279
+    },
+    {
+      "name": "sensitive_ratio_log",
+      "description": "log of sensitive records opened vs. this person's average",
+      "split_share": 0.1724,
+      "normal_median": -0.157,
+      "normal_spread": 0.516
+    },
+    {
+      "name": "new_sensitive_systems",
+      "description": "Number of sensitive systems opened for the first time",
+      "split_share": 0.0,
+      "normal_median": 0.0,
+      "normal_spread": 0.25
+    },
+    {
+      "name": "unfamiliar_admin_actions",
+      "description": "Number of admin actions this person never performed before",
+      "split_share": 0.0219,
+      "normal_median": 0.0,
+      "normal_spread": 0.25
+    }
+  ],
+  "training_data": {
+    "source": "Synthetic company activity from simulator.py (data/synthetic_security_events.csv)",
+    "sha256": "e1b96a70477ccdcb93864eaa569f71dfd28a9451a84bee6180c19d1806d9734e",
+    "employees": 15,
+    "sessions_total": 700,
+    "baseline_days": "0-13 (builds digital twins)",
+    "training_days": "14-34",
+    "training_sessions": 298,
+    "training_attacks": 0,
+    "test_days": "35+ (held out, contains planted attacks)"
+  },
+  "evaluation": {
+    "test_sessions": 190,
+    "test_attacks": 18,
+    "alert_threshold": 60,
+    "ml_only": {
+      "tp": 18,
+      "fp": 0,
+      "fn": 0,
+      "tn": 172,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "false_positive_rate": 0.0
+    },
+    "rules_only": {
+      "tp": 15,
+      "fp": 0,
+      "fn": 3,
+      "tn": 172,
+      "precision": 1.0,
+      "recall": 0.833,
+      "f1": 0.909,
+      "false_positive_rate": 0.0
+    },
+    "hybrid": {
+      "tp": 18,
+      "fp": 0,
+      "fn": 0,
+      "tn": 172,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "false_positive_rate": 0.0
+    },
+    "per_scenario": {
+      "account_takeover": {
+        "label": "Account takeover",
+        "caught": 3,
+        "total": 3
+      },
+      "insider_exfiltration": {
+        "label": "Insider data exfiltration",
+        "caught": 3,
+        "total": 3
+      },
+      "credential_stuffing": {
+        "label": "Credential stuffing",
+        "caught": 3,
+        "total": 3
+      },
+      "impossible_travel": {
+        "label": "Impossible travel",
+        "caught": 3,
+        "total": 3
+      },
+      "rogue_ai_agent": {
+        "label": "Rogue AI agent / API abuse",
+        "caught": 3,
+        "total": 3
+      },
+      "stealth_exfiltration": {
+        "label": "Stealth (low-and-slow) exfiltration",
+        "caught": 3,
+        "total": 3
+      }
+    }
+  },
+  "files": {
+    "model": "model/sentinel_model.npz",
+    "card": "model/model_card.json"
+  },
+  "limitations": [
+    "Trained on synthetic data; accuracy on real enterprise logs will be lower.",
+    "A new employee has no twin yet, so early sessions are scored against defaults.",
+    "Behaviour drifts over time; twins should be rebuilt regularly."
+  ]
+}

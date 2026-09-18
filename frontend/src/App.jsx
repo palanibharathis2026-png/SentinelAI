@@ -5,6 +5,7 @@ import Layout from "./components/Layout.jsx";
 import Landing from "./pages/Landing.jsx";
 import AccessControl from "./pages/AccessControl.jsx";
 import MailOutbox from "./pages/MailOutbox.jsx";
+import SecurityCenter from "./pages/SecurityCenter.jsx";
 import Login from "./pages/Login.jsx";
 import StaffPortal from "./pages/StaffPortal.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
@@ -36,6 +37,7 @@ export default function App() {
         <Route path="/model" element={<Model />} />
         <Route path="/access" element={<AccessControl />} />
         <Route path="/mail" element={<MailOutbox />} />
+        <Route path="/security" element={<SecurityCenter />} />
         <Route path="*" element={<Landing />} />
       </Routes>
     </Layout>

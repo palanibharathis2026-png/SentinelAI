@@ -20,11 +20,11 @@ from sqlalchemy.orm import Session
 import auth
 import mailer
 import simulator
-from common import ALERT_TIERS, event_out, get_employee, get_event, latest_time, names
+from common import ALERT_TIERS, audit, event_out, get_employee, get_event, latest_time, names
 from database import get_db
 from feature_engineering import haversine_km
 from detection_service import sentinel
-from models import AccessRequest, Event, MailMessage, Setting, StaffAccess
+from models import AccessRequest, AuditLog, Event, MailMessage, Setting, StaffAccess
 
 router = APIRouter()
 
@@ -42,6 +42,8 @@ presence_lock = threading.Lock()
 revoked_sessions: set[int] = set()      # portal sessions the SOC force-signed-out
 admin_failures: list[float] = []
 ADMIN_MAX_FAILURES, ADMIN_LOCK_SECONDS = 5, 120
+admin_challenges: dict[str, float] = {}  # password accepted, waiting for the authenticator code
+STAFF_MAX_FAILURES = 5                   # wrong passwords in a row before a staff account is locked
 
 
 # ------------------------------------------------------------------ helpers
@@ -156,19 +158,78 @@ class LoginRequest(BaseModel):
     password: str
 
 
-@router.post("/api/auth/login")
-def admin_login(body: LoginRequest):
+def _setting(db: Session, key: str) -> str | None:
+    row = db.get(Setting, key)
+    return row.value if row else None
+
+
+def _set_setting(db: Session, key: str, value: str | None) -> None:
+    db.merge(Setting(key=key, value=value))
+    db.commit()
+
+
+def _admin_throttle() -> None:
     now = time.time()
     admin_failures[:] = [t for t in admin_failures if now - t < ADMIN_LOCK_SECONDS]
     if len(admin_failures) >= ADMIN_MAX_FAILURES:
         wait = int(ADMIN_LOCK_SECONDS - (now - admin_failures[0])) + 1
         raise HTTPException(429, f"Too many wrong attempts. Admin login is paused for {wait} seconds.")
-    if not auth.check_admin(body.username, body.password):
-        admin_failures.append(now)
-        raise HTTPException(401, "Wrong username or password")
-    admin_failures.clear()
+
+
+def _admin_token(db: Session, request: Request) -> dict:
     name = auth.ADMIN_USERNAME
+    audit(db, request, "admin_login", name, "password + authenticator code" if auth.ADMIN_2FA else "password", actor=name)
     return {"token": auth.issue("admin", name, name), "role": "admin", "name": name}
+
+
+@router.post("/api/auth/login")
+def admin_login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    """Step 1: admin password. Step 2 (/api/auth/admin-2fa): code from an authenticator app."""
+    _admin_throttle()
+    if not auth.check_admin(body.username, body.password):
+        admin_failures.append(time.time())
+        audit(db, request, "admin_login_failed", body.username[:40], "wrong username or password", actor="anonymous")
+        raise HTTPException(401, "Wrong username or password")
+    if not auth.ADMIN_2FA:
+        admin_failures.clear()
+        return _admin_token(db, request)
+    cid = secrets.token_urlsafe(16)
+    admin_challenges[cid] = time.time() + OTP_SECONDS
+    if _setting(db, "admin_totp_secret"):
+        return {"mfa_required": True, "challenge_id": cid, "enrolled": True}
+    # First sign-in: set up the authenticator app. The secret only becomes active once a code is confirmed.
+    pending = _setting(db, "admin_totp_pending") or auth.new_totp_secret()
+    _set_setting(db, "admin_totp_pending", pending)
+    return {"mfa_required": True, "challenge_id": cid, "enrolled": False, "secret": pending,
+            "otpauth_uri": auth.totp_uri(pending, auth.ADMIN_USERNAME)}
+
+
+class AdminCode(BaseModel):
+    challenge_id: str
+    code: str
+
+
+@router.post("/api/auth/admin-2fa")
+def admin_second_factor(body: AdminCode, request: Request, db: Session = Depends(get_db)):
+    _admin_throttle()
+    expires = admin_challenges.get(body.challenge_id)
+    if not expires or expires < time.time():
+        admin_challenges.pop(body.challenge_id, None)
+        raise HTTPException(401, "This sign-in expired. Enter your password again.")
+    secret = _setting(db, "admin_totp_secret")
+    enrolling = secret is None
+    secret = secret or _setting(db, "admin_totp_pending")
+    if not secret or not auth.verify_totp(secret, body.code):
+        admin_failures.append(time.time())
+        audit(db, request, "admin_2fa_failed", auth.ADMIN_USERNAME, "wrong authenticator code", actor="anonymous")
+        raise HTTPException(401, "Wrong or expired code. Use the current 6-digit code from your authenticator app.")
+    admin_challenges.pop(body.challenge_id, None)
+    admin_failures.clear()
+    if enrolling:
+        _set_setting(db, "admin_totp_secret", secret)
+        _set_setting(db, "admin_totp_pending", None)
+        audit(db, request, "admin_2fa_enrolled", auth.ADMIN_USERNAME, "authenticator app linked", actor=auth.ADMIN_USERNAME)
+    return _admin_token(db, request)
 
 
 # ------------------------------------------------------------------ staff login (password + OTP)
@@ -216,6 +277,7 @@ def _start_session(db: Session, username: str, user_id: str, where: tuple, ua: s
         + (f"Likely threat: {row.threat}\n" if row.threat else "")
         + "\nOpen the SentinelAI dashboard to review or lock the session.",
         "login", user_id)
+    audit(db, None, "staff_login", user_id, f"{row.city} · {row.os} / {row.browser} · {row.tier} {row.risk}", actor=username)
     token = auth.issue("staff", user_id, emp.name, event_id=row.id)
     return {"token": token, "role": "staff", "name": emp.name}
 
@@ -225,13 +287,22 @@ def staff_login(body: StaffLoginRequest, request: Request, db: Session = Depends
     """Step 1: staff ID + password. With OTP on, this emails a 6-digit code instead of signing in."""
     username = body.username.strip().lower()
     account = auth.staff_account(username)
-    if not account or not hmac.compare_digest(account[0], body.password):
+    if account and get_employee(db, account[1]).status == "blocked":
+        raise HTTPException(403, "This account is locked. Ask your security admin to unlock it.")
+    if not account or not auth.verify_password(body.password, account[0]):
         if account:
             failed_logins[username] = failed_logins.get(username, 0) + 1
+            audit(db, request, "staff_login_failed", account[1], f"wrong password ({failed_logins[username]} in a row)",
+                  actor="anonymous")
+            if failed_logins[username] >= STAFF_MAX_FAILURES:
+                emp = get_employee(db, account[1])
+                _lock(db, account[1], f"Locked after {STAFF_MAX_FAILURES} wrong passwords in a row (possible password guessing)")
+                _notify_admin(db, f"Account locked: {STAFF_MAX_FAILURES} wrong passwords for {emp.name}",
+                              f"Someone entered a wrong password for {emp.name} {STAFF_MAX_FAILURES} times in a row. "
+                              "The account is locked until you unlock it in SentinelAI > Access Control.", "alert", account[1])
+                raise HTTPException(403, "Too many wrong passwords. This account is now locked; ask your security admin.")
         raise HTTPException(401, "Wrong staff ID or password")
     user_id = account[1]
-    if get_employee(db, user_id).status == "blocked":
-        raise HTTPException(403, "This account is locked. Ask your security admin to unlock it.")
     ua, ip = request.headers.get("user-agent", ""), request.client.host if request.client else "0.0.0.0"
     where = _resolve_location(body.lat, body.lon, simulator.PROFILES[user_id]["home_city"])
     acc = _access(db, user_id)
@@ -480,13 +551,14 @@ def staff_logout(request: Request):
 
 # ------------------------------------------------------------------ admin: live staff
 @router.post("/api/staff/{user_id}/signout")
-def force_signout(user_id: str):
+def force_signout(user_id: str, request: Request, db: Session = Depends(get_db)):
     """SOC action: end someone's portal session right now."""
     with presence_lock:
         entry = presence.pop(user_id, None)
     if not entry:
         raise HTTPException(404, "That person is not signed in")
     revoked_sessions.add(entry["event_id"])
+    audit(db, request, "force_signout", user_id)
     return {"status": "signed out", "user_id": user_id}
 
 
@@ -564,7 +636,7 @@ class AccessUpdate(BaseModel):
 
 
 @router.put("/api/access/{user_id}")
-def update_access(user_id: str, body: AccessUpdate, db: Session = Depends(get_db)):
+def update_access(user_id: str, body: AccessUpdate, request: Request, db: Session = Depends(get_db)):
     if user_id not in USERNAMES:
         raise HTTPException(404, "Not a staff portal account")
     acc = _access(db, user_id)
@@ -581,13 +653,21 @@ def update_access(user_id: str, body: AccessUpdate, db: Session = Depends(get_db
         if acc.email:
             acc.known_emails = sorted(set(acc.known_emails or []) | {acc.email})
     db.commit()
+    changes = []
+    if body.permissions is not None:
+        changes.append("permissions: " + (", ".join(acc.permissions) or "none"))
+    if body.email is not None:
+        changes.append(f"email: {acc.email or 'cleared'}")
+    audit(db, request, "access_changed", user_id, "; ".join(changes))
     return {"user_id": user_id, "permissions": acc.permissions, "email": acc.email}
 
 
 @router.post("/api/access/{user_id}/unlock")
-def unlock(user_id: str, db: Session = Depends(get_db)):
+def unlock(user_id: str, request: Request, db: Session = Depends(get_db)):
     """Unlock a staff account after review. A reviewed denial no longer counts against the live session."""
     emp = get_employee(db, user_id)
+    audit(db, request, "unlock", user_id, f"was: {emp.status_reason or emp.status}")
+    failed_logins.pop(USERNAMES.get(user_id, ""), None)
     emp.status, emp.status_reason, emp.status_changed_at = "active", None, simulator.now_ist()
     db.commit()
     entry = presence.get(user_id)
@@ -610,7 +690,7 @@ class RequestDecision(BaseModel):
 
 
 @router.post("/api/access/requests/{request_id}")
-def decide_request(request_id: int, body: RequestDecision, db: Session = Depends(get_db)):
+def decide_request(request_id: int, body: RequestDecision, request: Request, db: Session = Depends(get_db)):
     req = db.get(AccessRequest, request_id)
     if not req or req.status != "pending":
         raise HTTPException(404, "No pending request with that id")
@@ -619,6 +699,7 @@ def decide_request(request_id: int, body: RequestDecision, db: Session = Depends
     if body.approve:
         acc.permissions = sorted(set(acc.permissions or []) | {req.resource})
     db.commit()
+    audit(db, request, f"request_{req.status}", req.user_id, req.resource)
     emp = get_employee(db, req.user_id)
     mailer.send(db, _staff_email(acc), f"Access request {req.status}: {req.resource}",
                 f"Hi {emp.name.split()[0]},\n\nYour request for {req.resource} was {req.status} by the security admin.",
@@ -632,7 +713,7 @@ class MailSettings(BaseModel):
 
 
 @router.put("/api/settings/mail")
-def set_mail_settings(body: MailSettings, db: Session = Depends(get_db)):
+def set_mail_settings(body: MailSettings, request: Request, db: Session = Depends(get_db)):
     email = body.admin_email.strip()
     if email and ("@" not in email or " " in email):
         raise HTTPException(400, "That does not look like an email address")
@@ -640,6 +721,7 @@ def set_mail_settings(body: MailSettings, db: Session = Depends(get_db)):
     row.value = email or None
     db.merge(row)
     db.commit()
+    audit(db, request, "admin_email_changed", None, email or "cleared")
     return {"admin_email": _admin_email(db)}
 
 
@@ -648,6 +730,26 @@ def test_mail(db: Session = Depends(get_db)):
     msg = mailer.send(db, _admin_email(db), "[SentinelAI] Test email",
                       "If you can read this, SentinelAI can email you about logins and security alerts.", "test")
     return {"id": msg.id, "to": msg.to, "delivery": msg.delivery}
+
+
+@router.get("/api/security")
+def security_status(limit: int = Query(60, le=300), db: Session = Depends(get_db)):
+    """Security controls in force, plus the audit log."""
+    rows = db.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(limit)).all()
+    return {
+        "controls": {
+            "admin_2fa": auth.ADMIN_2FA,
+            "admin_2fa_enrolled": _setting(db, "admin_totp_secret") is not None,
+            "admin_session_hours": auth.ADMIN_TOKEN_HOURS,
+            "admin_lockout": f"{ADMIN_MAX_FAILURES} wrong attempts -> {ADMIN_LOCK_SECONDS // 60} min pause",
+            "staff_otp": OTP_REQUIRED,
+            "staff_lockout": f"{STAFF_MAX_FAILURES} wrong passwords in a row -> locked until an admin unlocks",
+            "password_storage": "PBKDF2-SHA256, 200,000 iterations, per-user salt",
+            "email_delivery": "SMTP" if mailer.smtp_config() else "demo (Mail Outbox)",
+        },
+        "audit": [{"id": r.id, "at": r.at, "actor": r.actor, "action": r.action, "target": r.target,
+                   "detail": r.detail, "ip": r.ip} for r in rows],
+    }
 
 
 @router.get("/api/mail")

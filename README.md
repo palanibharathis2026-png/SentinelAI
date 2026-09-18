@@ -23,7 +23,7 @@ An **AI Security Analyst** (Claude, with an offline fallback) explains each inci
 
 The front page is a login screen. Nothing is visible until someone signs in.
 
-**SOC admin / owner:** username `TOBY`, password `5429` (change with `ADMIN_USERNAME` / `ADMIN_PASSWORD` in `.env`).
+**SOC admin / owner:** username `TOBY`, password `5429`, **plus a 6-digit code from an authenticator app** (Google or Microsoft Authenticator). On the first admin sign-in a QR code appears: scan it once with your phone. Lost the phone? Run `python backend/reset_admin_2fa.py`. Change the login with `ADMIN_USERNAME` / `ADMIN_PASSWORD`, or turn the app check off with `ADMIN_2FA=false` in `.env`.
 
 **Staff portal (demo accounts).** A guest signs in as an employee with **password + a 6-digit code sent by email**, and the admin dashboard shows them under **Staff online now** with a live risk score. Their real device, their **device location (GPS / mobile network / Wi-Fi, never typed in)** and wrong password/code attempts are scored. Passing the email code enrols the device as trusted.
 
@@ -66,6 +66,22 @@ A locked account can be unblocked from **Employees**. After 5 wrong admin passwo
 
 > These are demo credentials for a hackathon. For real use, keep the admin password in `.env` and store staff passwords hashed in the database.
 
+## Security of SentinelAI itself
+
+| Control | How |
+|---|---|
+| Admin 2-step login | Password + time-based code from an authenticator app (TOTP, RFC 6238); admin sessions expire after 4 hours |
+| Staff 2-step login | Password + 6-digit code by email; passing it enrols the device |
+| Password storage | PBKDF2-SHA256, 200,000 iterations, per-user salt (no plain passwords in the code) |
+| Brute-force protection | Admin: 5 wrong attempts pause sign-in for 2 minutes. Staff: 5 wrong passwords in a row lock the account until the admin unlocks it |
+| Least privilege | Per-system permissions; opening a system without permission locks the account |
+| Audit log | Every sign-in, failed attempt, unlock, block, permission change and request decision, with time, actor and IP (**Security Center** page) |
+| API protection | Every endpoint needs a signed token (HMAC-SHA256); staff tokens only reach the staff portal; security headers on every response |
+
+## The trained model
+
+The model is saved as files in [`model/`](model/): `sentinel_model.npz` (all 200 trees, the learned medians and spreads, and the calibration, as plain NumPy arrays with no pickle) and `model_card.json` (algorithms, parameters, what was learned per feature, training data and test results). The **Model & Accuracy** page shows the card and has download buttons. Retrain with `cd backend && python train_model.py --check`, or on your own logs with `--data my_logs.csv`. See [`model/README.md`](model/README.md) to load and use it.
+
 ## Features
 
 | | Feature | What it shows |
@@ -74,6 +90,8 @@ A locked account can be unblocked from **Employees**. After 5 wrong admin passwo
 | 🏆 | **Beat-SentinelAI challenge** | Guests try to take data without getting caught; the dashboard counts attempts vs. caught |
 | 🛑 | **Live SOC controls** | Lock an account or force-sign-out a signed-in person straight from *Staff online now* |
 | 🖥️ | **Desktop notifications** | Windows notifications for blocks and logins, even when the dashboard tab is in the background |
+| 🛡️ | **Security Center** | Controls in force and the audit log of every sign-in and admin decision |
+| 🧠 | **Trained model files** | `model/sentinel_model.npz` + `model_card.json`, shown and downloadable on the Model page |
 | 📧 | **Email OTP + access control** | Staff sign in with password + emailed code; admin grants per-system access; no-permission attempts lock the account until unlocked; unfamiliar-email detection; Mail Outbox |
 | 🔐 | **Login** | Admin login guards the dashboard; staff portal for live demo logins, shown as *Staff online now* |
 | 🏠 | **Overview page** | The problem, how it works in 4 steps, live accuracy and a mini threat map |

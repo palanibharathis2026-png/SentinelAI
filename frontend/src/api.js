@@ -63,6 +63,17 @@ export const api = {
   scenarios: () => request("/api/scenarios"),
   simulate: (scenario, userId) => post("/api/simulate", { scenario, user_id: userId || null }),
   model: () => request("/api/model"),
+  modelCard: () => request("/api/model/card"),
+  downloadModel: async (name) => {
+    // Files need the login token too, so fetch them and save the result from the browser.
+    const token = getAuth()?.token;
+    const res = await fetch(`${BASE}/api/model/download/${name}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) throw new Error("Download failed");
+    const url = URL.createObjectURL(await res.blob());
+    const a = Object.assign(document.createElement("a"), { href: url, download: name === "model" ? "sentinel_model.npz" : "model_card.json" });
+    a.click();
+    URL.revokeObjectURL(url);
+  },
   live: () => request("/api/live"),
   setLive: (enabled) => post("/api/live", { enabled }),
   reset: () => post("/api/reset"),
@@ -71,6 +82,8 @@ export const api = {
   labOptions: () => request("/api/lab/options"),
   labScore: (body) => post("/api/lab/score", body),
   login: (username, password) => post("/api/auth/login", { username, password }),
+  adminSecondFactor: (challengeId, code) => post("/api/auth/admin-2fa", { challenge_id: challengeId, code }),
+  security: () => request("/api/security"),
   staffLogin: (username, password, extra = {}) => post("/api/auth/staff-login", { username, password, ...extra }),
   staffOtp: (challengeId, code) => post("/api/auth/staff-otp", { challenge_id: challengeId, code }),
   staffRequestAccess: (system) => post("/api/staff/me/request-access", { system }),

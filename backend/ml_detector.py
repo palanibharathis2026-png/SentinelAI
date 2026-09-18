@@ -137,3 +137,79 @@ class AnomalyDetector:
         if self.mode == "mean":
             return (self.forest.risk(X) + self.distance.risk(X)) / 2
         return np.maximum(self.forest.risk(X), self.distance.risk(X))
+
+
+# ---------------------------------------------------------------------- saving / loading
+def _flatten(tree) -> list[tuple]:
+    """Tree -> rows of (feature, threshold, left, right, size); feature = -1 marks a leaf."""
+    rows = []
+
+    def visit(node) -> int:
+        i = len(rows)
+        rows.append(None)
+        if node[0] == "leaf":
+            rows[i] = (-1, 0.0, -1, -1, node[1])
+        else:
+            _, f, split, left, right = node
+            li, ri = visit(left), visit(right)
+            rows[i] = (int(f), float(split), li, ri, 0)
+        return i
+
+    visit(tree)
+    return rows
+
+
+def _unflatten(rows: np.ndarray, i: int = 0) -> tuple:
+    f, split, left, right, size = rows[i]
+    if int(f) == -1:
+        return ("leaf", int(size))
+    return ("node", int(f), float(split), _unflatten(rows, int(left)), _unflatten(rows, int(right)))
+
+
+def save_detector(det: "AnomalyDetector", path) -> None:
+    """Write every learned parameter to a single .npz file (no pickle, so it is safe to open)."""
+    forest = det.forest.model
+    flat = [np.array(_flatten(t), dtype=float) for t in forest.trees]
+    np.savez_compressed(
+        path,
+        tree_nodes=np.concatenate(flat),
+        tree_offsets=np.cumsum([0] + [len(t) for t in flat]),
+        forest_params=np.array([forest.n_trees, forest.sample_size, forest.max_depth, forest._c]),
+        distance_median=det.distance.model.median,
+        distance_scale=det.distance.model.scale,
+        calibration=np.array([det.forest.lo, det.forest.hi, det.distance.lo, det.distance.hi, det.at_risk]),
+        trained_on=np.array([det.trained_on]),
+    )
+
+
+def load_detector(path) -> "AnomalyDetector":
+    d = np.load(path)
+    forest = IsolationForest(n_trees=int(d["forest_params"][0]), sample_size=int(d["forest_params"][1]))
+    forest.max_depth, forest._c = int(d["forest_params"][2]), float(d["forest_params"][3])
+    nodes, offsets = d["tree_nodes"], d["tree_offsets"]
+    forest.trees = [_unflatten(nodes[offsets[i]:offsets[i + 1]]) for i in range(len(offsets) - 1)]
+    distance = RobustDistance()
+    distance.median, distance.scale = d["distance_median"], d["distance_scale"]
+    f_lo, f_hi, d_lo, d_hi, at_risk = d["calibration"]
+    det = AnomalyDetector(at_risk=float(at_risk))
+    det.forest = _Calibrated.__new__(_Calibrated)
+    det.forest.model, det.forest.lo, det.forest.hi, det.forest.at_risk = forest, float(f_lo), float(f_hi), float(at_risk)
+    det.distance = _Calibrated.__new__(_Calibrated)
+    det.distance.model, det.distance.lo, det.distance.hi, det.distance.at_risk = distance, float(d_lo), float(d_hi), float(at_risk)
+    det.trained_on = int(d["trained_on"][0])
+    return det
+
+
+def split_usage(det: "AnomalyDetector", n_features: int) -> np.ndarray:
+    """Share of all forest splits that use each feature: a simple view of what the forest relies on."""
+    counts = np.zeros(n_features)
+
+    def visit(node):
+        if node[0] == "node":
+            counts[node[1]] += 1
+            visit(node[3])
+            visit(node[4])
+
+    for t in det.forest.model.trees:
+        visit(t)
+    return counts / max(counts.sum(), 1)

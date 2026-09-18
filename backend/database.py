@@ -21,10 +21,15 @@ def init_db() -> None:
     Base.metadata.create_all(engine)
 
 
+# Kept across a demo reset: the admin's authenticator link and the audit trail.
+KEEP_ON_RESET = {"settings", "audit_log"}
+
+
 def reset_db() -> None:
     import models  # noqa: F401
 
-    Base.metadata.drop_all(engine)
+    tables = [t for t in Base.metadata.sorted_tables if t.name not in KEEP_ON_RESET]
+    Base.metadata.drop_all(engine, tables=tables)
     Base.metadata.create_all(engine)
 
 

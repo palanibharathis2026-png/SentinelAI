@@ -1,6 +1,8 @@
 import { useState } from "react";
+import QRCode from "qrcode";
 import {
-  ArrowLeft, Briefcase, Eye, EyeOff, Fingerprint, Inbox, Loader2, LogIn, Mail, MapPin, ShieldCheck, UserCog,
+  ArrowLeft, Briefcase, Eye, EyeOff, Fingerprint, Inbox, KeyRound, Loader2, LogIn, Mail, MapPin, ShieldCheck, Smartphone,
+  UserCog,
 } from "lucide-react";
 import { api } from "../api.js";
 import { setAuth } from "../auth.js";
@@ -26,7 +28,9 @@ export default function Login() {
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
-  const [otp, setOtp] = useState(null); // pending email verification
+  const [otp, setOtp] = useState(null); // pending email verification (staff)
+  const [adminMfa, setAdminMfa] = useState(null); // pending authenticator code (admin)
+  const [qr, setQr] = useState(null);
   const [code, setCode] = useState("");
   const [flash] = useState(() => {
     try {
@@ -44,6 +48,7 @@ export default function Login() {
     setUsername("");
     setPassword("");
     setOtp(null);
+    setAdminMfa(null);
   }
 
   function finish(res) {
@@ -55,8 +60,15 @@ export default function Login() {
     setError(null);
     try {
       if (mode === "admin") {
-        setBusy("Signing in...");
-        finish(await api.login(username, password));
+        setBusy("Checking password...");
+        const res = await api.login(username, password);
+        if (res.mfa_required) {
+          setAdminMfa(res);
+          setCode("");
+          setQr(res.otpauth_uri ? await QRCode.toDataURL(res.otpauth_uri, { margin: 1, width: 200 }) : null);
+        } else {
+          finish(res);
+        }
         return;
       }
       setBusy("Getting your location...");
@@ -81,10 +93,13 @@ export default function Login() {
     setError(null);
     setBusy("Verifying code...");
     try {
-      finish(await api.staffOtp(otp.challenge_id, code));
+      finish(adminMfa ? await api.adminSecondFactor(adminMfa.challenge_id, code) : await api.staffOtp(otp.challenge_id, code));
     } catch (err) {
       setError(err.message);
-      if (/expired|Too many/.test(err.message)) setOtp(null);
+      if (/expired|Too many/.test(err.message)) {
+        setOtp(null);
+        setAdminMfa(null);
+      }
     } finally {
       setBusy(null);
     }
@@ -139,7 +154,55 @@ export default function Login() {
           </div>
 
           <div className="card glow-border border p-7">
-            {otp ? (
+            {adminMfa ? (
+              <>
+                <button type="button" onClick={() => setAdminMfa(null)} className="mb-4 flex items-center gap-1 text-sm text-slate-400 hover:text-slate-200">
+                  <ArrowLeft className="h-4 w-4" /> Back
+                </button>
+                <div className="mb-3 w-fit rounded-xl bg-gradient-to-br from-fuchsia-500 to-indigo-600 p-2.5">
+                  <Smartphone className="h-6 w-6 text-white" />
+                </div>
+                {adminMfa.enrolled ? (
+                  <>
+                    <h2 className="text-2xl font-bold">Admin verification</h2>
+                    <p className="mt-1 text-sm text-slate-400">
+                      Enter the 6-digit code from your authenticator app (Google or Microsoft Authenticator). It changes every 30 seconds.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h2 className="text-2xl font-bold">Set up admin verification</h2>
+                    <p className="mt-1 text-sm text-slate-400">
+                      One-time setup. Open <b>Google Authenticator</b> or <b>Microsoft Authenticator</b> on your phone, tap <b>+</b>, and
+                      scan this code. From now on the admin needs the password <i>and</i> the phone.
+                    </p>
+                    <div className="mt-4 flex flex-col items-center gap-2 rounded-xl bg-white p-3">
+                      {qr && <img src={qr} alt="Authenticator QR code" className="h-44 w-44" />}
+                    </div>
+                    <div className="mt-2 text-center text-xs text-slate-400">
+                      Can&apos;t scan? Enter this key: <span className="font-mono break-all text-slate-200 select-all">{adminMfa.secret}</span>
+                    </div>
+                  </>
+                )}
+                <form onSubmit={verify} className="mt-5 space-y-4">
+                  <input
+                    autoFocus
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                    placeholder="000000"
+                    className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-3 text-center font-mono text-3xl tracking-[0.5em] outline-none focus:border-fuchsia-400"
+                  />
+                  {error && <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</div>}
+                  <button type="submit" disabled={!!busy || code.length !== 6} className="btn-primary w-full justify-center py-3 text-base">
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+                    {busy || (adminMfa.enrolled ? "Verify and open SOC" : "Link app and open SOC")}
+                  </button>
+                </form>
+              </>
+            ) : otp ? (
               <>
                 <button type="button" onClick={() => setOtp(null)} className="mb-4 flex items-center gap-1 text-sm text-slate-400 hover:text-slate-200">
                   <ArrowLeft className="h-4 w-4" /> Back
@@ -276,7 +339,7 @@ export default function Login() {
             )}
           </div>
           <p className="mt-4 text-center text-xs text-slate-500">
-            {staff ? "Wrong passwords and codes are counted: too many look like a brute-force attack." : "Only the owner / security admin can open the dashboard."}
+            {staff ? "5 wrong passwords in a row lock the account until the admin unlocks it." : "Admin sign-in needs the password and a code from the admin's phone."}
           </p>
         </div>
       </section>

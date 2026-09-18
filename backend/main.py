@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager  # noqa: E402
 from datetime import timedelta  # noqa: E402
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request  # noqa: E402
-from fastapi.responses import JSONResponse  # noqa: E402
+from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 from sqlalchemy import func, select  # noqa: E402
@@ -22,12 +22,12 @@ import auth  # noqa: E402
 import portal  # noqa: E402
 import simulator  # noqa: E402
 from database import SessionLocal, get_db, init_db  # noqa: E402
-from common import ALERT_TIERS, employee_out, event_out  # noqa: E402
+from common import ALERT_TIERS, audit, employee_out, event_out  # noqa: E402
 from common import get_employee as _get_employee  # noqa: E402
 from common import get_event as _get_event  # noqa: E402
 from common import latest_time as _latest_time  # noqa: E402
 from common import names as _names  # noqa: E402
-from detection_service import sentinel  # noqa: E402
+from detection_service import CARD_FILE, MODEL_DIR, MODEL_FILE, sentinel  # noqa: E402
 from models import Employee, Event  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="SentinelAI", version="1.0.0", lifespan=lifespan)
 
 # Everything under /api needs a login except these. Staff tokens may only use their own portal endpoints.
-OPEN_PATHS = {"/api/health", "/api/auth/login", "/api/auth/staff-login", "/api/auth/staff-otp"}
+OPEN_PATHS = {"/api/health", "/api/auth/login", "/api/auth/admin-2fa", "/api/auth/staff-login", "/api/auth/staff-otp"}
 
 
 @app.middleware("http")
@@ -83,6 +83,17 @@ async def require_login(request: Request, call_next):
         return JSONResponse({"detail": "Admins only"}, status_code=403)
     request.state.user = claims
     return await call_next(request)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Browser hardening headers on every API response."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 # Added after the auth middleware so it wraps it and 401 responses still carry CORS headers.
@@ -237,18 +248,20 @@ class BlockRequest(BaseModel):
 
 
 @app.post("/api/users/{user_id}/block")
-def block_user(user_id: str, body: BlockRequest | None = None, db: Session = Depends(get_db)):
+def block_user(user_id: str, request: Request, body: BlockRequest | None = None, db: Session = Depends(get_db)):
     emp = _get_employee(db, user_id)
     emp.status = "blocked"
     emp.status_reason = (body.reason if body and body.reason else "Blocked manually by SOC analyst")
     emp.status_changed_at = simulator.now_ist()
     db.commit()
+    audit(db, request, "block", user_id, emp.status_reason)
     return employee_out(emp)
 
 
 @app.post("/api/users/{user_id}/unblock")
-def unblock_user(user_id: str, db: Session = Depends(get_db)):
+def unblock_user(user_id: str, request: Request, db: Session = Depends(get_db)):
     emp = _get_employee(db, user_id)
+    audit(db, request, "unlock", user_id, f"was: {emp.status_reason or emp.status}")
     emp.status, emp.status_reason, emp.status_changed_at = "active", None, simulator.now_ist()
     db.commit()
     return employee_out(emp)
@@ -275,12 +288,13 @@ class SimulateRequest(BaseModel):
 
 
 @app.post("/api/simulate")
-def simulate(body: SimulateRequest, db: Session = Depends(get_db)):
+def simulate(body: SimulateRequest, request: Request, db: Session = Depends(get_db)):
     if body.scenario not in simulator.SCENARIOS:
         raise HTTPException(400, f"Unknown scenario. Choose from: {', '.join(simulator.SCENARIOS)}")
     if body.user_id and body.user_id not in simulator.PROFILES:
         raise HTTPException(404, "Simulation needs one of the built-in employee profiles")
     events = sentinel.simulate(db, body.scenario, body.user_id)
+    audit(db, request, "simulate_attack", events[-1].user_id, simulator.SCENARIOS[body.scenario]["label"])
     names = _names(db)
     return [event_out(e, names) for e in events]
 
@@ -411,6 +425,21 @@ def model_info():
     return sentinel.metrics
 
 
+@app.get("/api/model/card")
+def model_card():
+    """What the trained model is, what it learned and how it was tested."""
+    return sentinel.card
+
+
+@app.get("/api/model/download/{name}")
+def model_download(name: str):
+    """The trained model files, so anyone can open and inspect them."""
+    files = {"model": MODEL_FILE, "card": CARD_FILE}
+    if name not in files or not (MODEL_DIR / files[name]).exists():
+        raise HTTPException(404, "Model file not found")
+    return FileResponse(MODEL_DIR / files[name], filename=files[name])
+
+
 class LiveUpdate(BaseModel):
     enabled: bool
 
@@ -427,6 +456,7 @@ def set_live(body: LiveUpdate):
 
 
 @app.post("/api/reset")
-def reset(db: Session = Depends(get_db)):
+def reset(request: Request, db: Session = Depends(get_db)):
     sentinel.reset(db)
+    audit(db, request, "reset_demo_data")
     return {"status": "reset", "sessions": db.scalar(select(func.count()).select_from(Event))}

@@ -4,7 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 import simulator
-from models import Employee, Event
+from models import AuditLog, Employee, Event
 
 ALERT_TIERS = ("MFA", "BLOCK")
 
@@ -43,6 +43,16 @@ def get_event(db: Session, event_id: int) -> Event:
     if not event:
         raise HTTPException(404, "Event not found")
     return event
+
+
+def audit(db: Session, request, action: str, target: str | None = None, detail: str | None = None,
+          actor: str | None = None) -> None:
+    """Record a security-relevant action in the audit log."""
+    claims = getattr(getattr(request, "state", None), "user", None) or {}
+    ip = request.client.host if request is not None and request.client else None
+    db.add(AuditLog(at=simulator.now_ist(), actor=actor or claims.get("sub") or "anonymous", action=action,
+                    target=target, detail=detail, ip=ip))
+    db.commit()
 
 
 def get_employee(db: Session, user_id: str) -> Employee:
