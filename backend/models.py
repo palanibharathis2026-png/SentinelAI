@@ -42,6 +42,8 @@ class Event(Base):
     api_calls: Mapped[int] = mapped_column(Integer)
     sensitive_access: Mapped[int] = mapped_column(Integer)
     session_minutes: Mapped[int] = mapped_column(Integer)
+    resources: Mapped[list] = mapped_column(JSON, default=list)  # sensitive systems opened
+    actions: Mapped[list] = mapped_column(JSON, default=list)  # privileged actions performed
 
     source: Mapped[str] = mapped_column(String(16))  # history | live | simulated
     scenario: Mapped[str | None] = mapped_column(String(40), nullable=True)  # ground truth, None = normal

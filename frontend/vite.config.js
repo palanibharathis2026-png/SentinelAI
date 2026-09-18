@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 
 // In development, /api calls are forwarded to the FastAPI backend.
 export default defineConfig({
+  build: { chunkSizeWarningLimit: 1000 },
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,

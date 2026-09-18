@@ -7,14 +7,30 @@
 
 body {
   @apply bg-slate-950 text-slate-100 antialiased;
+  background-image:
+    radial-gradient(60rem 30rem at 10% -10%, rgb(34 211 238 / 0.10), transparent 60%),
+    radial-gradient(50rem 30rem at 100% 0%, rgb(217 70 239 / 0.10), transparent 60%),
+    radial-gradient(40rem 30rem at 50% 110%, rgb(99 102 241 / 0.10), transparent 60%);
+  background-attachment: fixed;
 }
 
 @utility card {
-  @apply rounded-xl border border-slate-800 bg-slate-900/70 p-5;
+  @apply rounded-2xl border border-white/10 bg-slate-900/60 p-5 shadow-lg shadow-black/20 backdrop-blur;
 }
 
 @utility card-title {
-  @apply mb-4 flex items-center gap-2 text-sm font-semibold tracking-wider text-slate-400 uppercase;
+  @apply mb-4 flex items-center gap-2 text-sm font-semibold tracking-wider text-slate-300 uppercase;
+}
+
+@utility gradient-text {
+  @apply bg-gradient-to-r from-cyan-300 via-indigo-300 to-fuchsia-400 bg-clip-text text-transparent;
+}
+
+@utility glow-border {
+  @apply relative border-transparent;
+  background:
+    linear-gradient(rgb(15 23 42 / 0.9), rgb(15 23 42 / 0.9)) padding-box,
+    linear-gradient(120deg, #22d3ee, #818cf8, #e879f9) border-box;
 }
 
 @utility btn {
@@ -22,13 +38,89 @@ body {
 }
 
 @utility btn-primary {
-  @apply btn bg-cyan-500 text-slate-950 hover:bg-cyan-400;
+  @apply btn bg-gradient-to-r from-cyan-400 to-indigo-400 text-slate-950 shadow-md shadow-cyan-500/20 hover:brightness-110;
 }
 
 @utility btn-danger {
-  @apply btn bg-red-500/90 text-white hover:bg-red-500;
+  @apply btn bg-gradient-to-r from-red-500 to-rose-500 text-white shadow-md shadow-red-500/20 hover:brightness-110;
 }
 
 @utility btn-ghost {
-  @apply btn border border-slate-700 text-slate-200 hover:bg-slate-800;
+  @apply btn border border-white/15 text-slate-200 hover:bg-white/5;
+}
+
+@keyframes dash {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes ping-ring {
+  0% {
+    r: 3;
+    opacity: 0.9;
+  }
+  100% {
+    r: 16;
+    opacity: 0;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    transform: translateX(110%);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.arc {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: dash 2.2s ease-out forwards;
+}
+
+.pulse-ring {
+  animation: ping-ring 1.8s ease-out infinite;
+}
+
+.toast-in {
+  animation: toast-in 0.35s ease-out;
+}
+
+input[type="range"] {
+  accent-color: #818cf8;
+}
+
+/* Incident report printing: white page, no navigation. */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  aside,
+  header,
+  .no-print {
+    display: none !important;
+  }
+  .card {
+    background: white !important;
+    border-color: #ccc !important;
+    box-shadow: none !important;
+    color: black !important;
+    break-inside: avoid;
+  }
+  .print-only {
+    display: block !important;
+  }
+  * {
+    color: black !important;
+  }
+}
+
+.print-only {
+  display: none;
 }

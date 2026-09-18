@@ -10,7 +10,9 @@ import logging
 import os
 import random
 import threading
+from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 from sqlalchemy import func, select
@@ -36,7 +38,7 @@ ALERT_THRESHOLD = 60  # MFA or BLOCK counts as "detected"
 EVENT_FIELDS = [
     "user_id", "timestamp", "city", "country", "lat", "lon", "ip", "os", "browser",
     "failed_attempts", "files_downloaded", "mb_downloaded", "api_calls",
-    "sensitive_access", "session_minutes", "scenario",
+    "sensitive_access", "session_minutes", "resources", "actions", "scenario",
 ]
 
 
@@ -183,15 +185,18 @@ class SentinelEngine:
         verdict = assess(facts, float(self.detector.risk(vec)[0]))
         return Event(**{k: e[k] for k in EVENT_FIELDS}, source=source, features=facts, **verdict)
 
+    def _trusted_prev(self, db: Session, user_id: str, before) -> dict | None:
+        """Last trusted (non-blocked) session, so an attacker's session never becomes the reference point."""
+        prev = db.scalars(select(Event).where(Event.user_id == user_id,
+                                              Event.timestamp <= before,
+                                              Event.tier != "BLOCK")
+                          .order_by(Event.timestamp.desc()).limit(1)).first()
+        return event_dict(prev) if prev else None
+
     def ingest(self, db: Session, e: dict, source: str) -> Event:
         """Score a new session, store it, and auto-block the account on a BLOCK verdict."""
         with self.lock:
-            # Compare with the last trusted session, so an attacker's session never becomes the reference point.
-            prev = db.scalars(select(Event).where(Event.user_id == e["user_id"],
-                                                  Event.timestamp <= e["timestamp"],
-                                                  Event.tier != "BLOCK")
-                              .order_by(Event.timestamp.desc()).limit(1)).first()
-            row = self._score(e, event_dict(prev) if prev else None, source)
+            row = self._score(e, self._trusted_prev(db, e["user_id"], e["timestamp"]), source)
             db.add(row)
             db.flush()
             emp = db.get(Employee, e["user_id"])
@@ -225,6 +230,16 @@ class SentinelEngine:
         rng = random.Random()
         return self.ingest(db, simulator.normal_session(rng.choice(pool), now, rng), "live")
 
+    def preview(self, db: Session, e: dict, minutes_since_last: float) -> dict:
+        """Score a hypothetical session without storing it (Risk Lab)."""
+        prev = self._trusted_prev(db, e["user_id"], simulator.now_ist() + timedelta(days=1))
+        if prev:
+            prev = {**prev, "timestamp": e["timestamp"] - timedelta(minutes=minutes_since_last)}
+        vec, facts = compute_features(e, self.twin(e["user_id"]), prev)
+        verdict = assess(facts, float(self.detector.risk(vec)[0]))
+        session = SimpleNamespace(**e, features=facts)
+        return verdict | {"comparison": self.compare(session), "last_city": prev["city"] if prev else None}
+
     def compare(self, event: Event) -> list[dict]:
         """Digital twin vs this session, row by row, for the dashboard."""
         t, f = self.twin(event.user_id), event.features
@@ -250,6 +265,12 @@ class SentinelEngine:
              "level": level(f["api_ratio"] >= 3, f["api_ratio"] >= 20)},
             {"label": "Sensitive access", "normal": f"~{t['avg_sensitive']:.0f}", "current": str(event.sensitive_access),
              "level": level(f["sensitive_ratio"] >= 2.5, f["sensitive_ratio"] >= 4)},
+            {"label": "Systems opened", "normal": ", ".join(t.get("familiar_resources", [])[:3]) or "none",
+             "current": ", ".join(f.get("resources", [])) or "none",
+             "level": level(bool(f.get("new_resources")), len(f.get("new_resources", [])) >= 2)},
+            {"label": "Admin actions", "normal": ", ".join(t.get("familiar_actions", [])) or "none",
+             "current": ", ".join(f.get("actions", [])) or "none",
+             "level": level(bool(f.get("new_actions")), bool(f.get("tampering")))},
         ]
 
 

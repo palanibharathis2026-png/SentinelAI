@@ -32,7 +32,7 @@ export default function AttackSimulator({ onLaunched }) {
   }
 
   return (
-    <div className="card">
+    <div className="card glow-border border">
       <div className="card-title">
         <Crosshair className="h-4 w-4 text-fuchsia-400" /> Attack simulator
       </div>
@@ -58,7 +58,7 @@ export default function AttackSimulator({ onLaunched }) {
             onClick={() => launch(s.id)}
             disabled={running !== null}
             title={s.description}
-            className="flex items-center justify-between rounded-lg border border-slate-700 px-3 py-2 text-left text-sm hover:border-fuchsia-500/60 hover:bg-fuchsia-500/10 disabled:opacity-50"
+            className="flex items-center justify-between rounded-lg border border-white/10 bg-gradient-to-r from-fuchsia-500/10 to-transparent px-3 py-2 text-left text-sm hover:border-fuchsia-400/60 hover:from-fuchsia-500/25 disabled:opacity-50"
           >
             <span>{s.label}</span>
             {running === s.id && <Loader2 className="h-4 w-4 animate-spin" />}

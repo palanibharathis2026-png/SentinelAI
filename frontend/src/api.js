@@ -40,4 +40,8 @@ export const api = {
   live: () => request("/api/live"),
   setLive: (enabled) => post("/api/live", { enabled }),
   reset: () => post("/api/reset"),
+  map: (hours = 168) => request(`/api/map?hours=${hours}`),
+  departments: () => request("/api/departments"),
+  labOptions: () => request("/api/lab/options"),
+  labScore: (body) => post("/api/lab/score", body),
 };

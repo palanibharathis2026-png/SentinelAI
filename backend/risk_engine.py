@@ -69,6 +69,15 @@ def _signals(f: dict) -> list[dict]:
     if f["sensitive"] >= 5 and f["sensitive_ratio"] >= 4:
         add("Sensitive data access", 20,
             f"{f['sensitive']} sensitive resources accessed (normally ~{f['avg_sensitive']:.0f})")
+    tampering = f.get("tampering", [])
+    if tampering:
+        add("Security tampering", 30,
+            f"Ran {', '.join(tampering)}: attackers switch off defences to stay hidden or keep access")
+    other_new_actions = [a for a in f.get("new_actions", []) if a not in tampering]
+    if other_new_actions:
+        add("Unfamiliar admin action", 15, f"First time running {', '.join(other_new_actions)}")
+    if f.get("new_resources"):
+        add("First-time sensitive access", 15, f"Opened {', '.join(f['new_resources'])} for the first time ever")
     if f["api_ratio"] >= 20:
         add("Machine-speed API usage", 30,
             f"{f['api']:,} API requests vs ~{f['avg_api']:.0f} normally ({f['api_ratio']:.0f}x)")
@@ -81,16 +90,18 @@ def likely_threat(f: dict, signals: list[dict]) -> str | None:
     names = {s["signal"] for s in signals}
     if not names:
         return None
-    if "Impossible travel" in names:
-        return "Account takeover (impossible travel)"
     if "Brute-force pattern" in names:
         return "Credential stuffing / brute force"
     if "Machine-speed API usage" in names or "Automation client" in names:
         return "Rogue automation / AI-agent API abuse"
+    if "Impossible travel" in names:
+        return "Account takeover (impossible travel)"
     if names & {"Mass data download", "Abnormal data download"}:
         if not (f["new_country"] or f["new_device"]):
             return "Insider data exfiltration"
         return "Account takeover with data theft"
+    if "Security tampering" in names:
+        return "Defence tampering after compromise"
     if f["new_country"] or f["new_device"]:
         return "Possible account compromise"
     return "Behavioural anomaly"

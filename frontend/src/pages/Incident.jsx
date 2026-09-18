@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Bot, CheckCircle2, Fingerprint, Loader2, Lock, RefreshCw, ShieldAlert, ThumbsDown, Unlock } from "lucide-react";
+import { Bot, CheckCircle2, Download, Fingerprint, KeyRound, Loader2, Lock, RefreshCw, Server, ShieldAlert, ThumbsDown, Unlock, XCircle } from "lucide-react";
 import { api } from "../api.js";
 import { usePolling } from "../hooks/usePolling.js";
 import RiskGauge from "../components/RiskGauge.jsx";
@@ -49,12 +49,20 @@ export default function Incident() {
     refresh();
   }
 
+  const tampering = ["disable_audit_logs", "disable_mfa", "delete_backups"];
+  const newResources = ev.resources.filter((r) => !data.twin.familiar_resources?.includes(r));
+
   return (
     <div className="space-y-6">
+      <div className="print-only">
+        <div className="text-xl font-bold">SentinelAI incident report #{ev.id}</div>
+        <div className="text-sm">Generated {new Date().toLocaleString()} · Team INNOVEX</div>
+        <hr className="my-3" />
+      </div>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="text-xs tracking-wider text-slate-500 uppercase">Incident #{ev.id}</div>
-          <h1 className="text-2xl font-bold">{ev.threat || "Session review"}</h1>
+          <h1 className="gradient-text text-3xl font-bold">{ev.threat || "Session review"}</h1>
           <p className="text-sm text-slate-400">
             <Link to={`/employees/${emp.id}`} className="text-cyan-300 hover:underline">{emp.name}</Link> · {emp.role} ·{" "}
             {fmtDateTime(ev.timestamp)} · {ev.city}, {ev.country} · IP {ev.ip}
@@ -65,7 +73,10 @@ export default function Incident() {
             </span>
           )}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="no-print flex flex-wrap gap-2">
+          <button onClick={() => window.print()} className="btn-primary" title="Save as PDF from the print dialog">
+            <Download className="h-4 w-4" /> Download report
+          </button>
           <button onClick={() => setStatus("resolved")} className="btn-ghost" disabled={ev.status === "resolved"}>
             <CheckCircle2 className="h-4 w-4" /> Resolve
           </button>
@@ -78,6 +89,16 @@ export default function Incident() {
           </button>
         </div>
       </div>
+
+      {ev.risk >= 30 && (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl border border-white/10 bg-gradient-to-r from-emerald-500/10 via-slate-900/40 to-rose-500/15 px-5 py-3">
+          <KeyRound className="h-5 w-5 text-slate-300" />
+          <span className="flex items-center gap-1.5 text-emerald-300"><CheckCircle2 className="h-4 w-4" /> Password correct</span>
+          <span className="flex items-center gap-1.5 text-emerald-300"><CheckCircle2 className="h-4 w-4" /> Login succeeded</span>
+          <span className="flex items-center gap-1.5 font-semibold text-rose-300"><XCircle className="h-4 w-4" /> Behaviour does not match {emp.name.split(" ")[0]}&apos;s twin</span>
+          <span className="text-xs text-slate-400">A normal login system would have let this session in.</span>
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="card flex flex-col items-center text-center">
@@ -117,7 +138,7 @@ export default function Incident() {
               </div>
             </>
           ) : (
-            <button onClick={() => explain(false)} className="btn-primary" disabled={explaining}>
+            <button onClick={() => explain(false)} className="btn-primary no-print" disabled={explaining}>
               {explaining ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}
               Explain this session
             </button>
@@ -144,6 +165,24 @@ export default function Incident() {
           )}
         </div>
       </div>
+
+      {(ev.resources.length > 0 || ev.actions.length > 0) && (
+        <div className="card">
+          <div className="card-title"><Server className="h-4 w-4 text-violet-400" /> What the session touched</div>
+          <div className="flex flex-wrap gap-2">
+            {ev.resources.map((r) => (
+              <span key={r} className={`rounded-full border px-3 py-1 text-xs ${newResources.includes(r) ? "border-orange-400/50 bg-orange-500/15 text-orange-200" : "border-white/10 text-slate-300"}`}>
+                {r}{newResources.includes(r) && " · first time"}
+              </span>
+            ))}
+            {ev.actions.map((a) => (
+              <span key={a} className={`rounded-full border px-3 py-1 font-mono text-xs ${tampering.includes(a) ? "border-rose-400/60 bg-rose-500/20 text-rose-200" : "border-indigo-400/40 bg-indigo-500/15 text-indigo-200"}`}>
+                ⚙ {a}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="card">
         <div className="card-title">

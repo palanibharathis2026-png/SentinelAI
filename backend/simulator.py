@@ -38,6 +38,9 @@ FOREIGN_CITIES = {
     "Singapore": ("Singapore", 1.35, 103.82),
 }
 
+# Every known city -> (country, lat, lon)
+LOCATIONS = {c: ("India", lat, lon) for c, (lat, lon) in INDIAN_CITIES.items()} | FOREIGN_CITIES
+
 # hours=(start, end): active from start up to end, wrapping past midnight when start > end.
 PROFILES = {p["id"]: p for p in [
     {"id": "EMP001", "name": "Pradish Kumar", "department": "Engineering", "role": "Backend Developer", "home_city": "Chennai", "hours": (9, 19), "device": ("Windows 11", "Chrome"), "alt_device": ("Android", "Chrome Mobile"), "files": 14, "api": 220, "mb_per_file": 1.8, "sensitive": 0.03, "weekend": 0.10},
@@ -84,11 +87,47 @@ SCENARIOS = {
     },
 }
 
+# Named sensitive systems each role normally works with.
+HIGH_VALUE = ["Customer PII DB", "Payroll DB", "Finance ledger", "HR records", "Source code repo", "Board reports"]
+ROLE_RESOURCES = {
+    "EMP001": ["Source code repo", "CI/CD pipeline"],
+    "EMP002": ["Finance ledger", "Board reports"],
+    "EMP003": ["HR records", "Payroll DB"],
+    "EMP004": ["CI/CD pipeline", "Production servers", "Source code repo", "Admin console"],
+    "EMP005": ["Sales CRM", "Customer PII DB"],
+    "EMP006": ["Customer PII DB", "Source code repo"],
+    "EMP007": ["Legal contracts", "HR records"],
+    "EMP008": ["Payroll DB", "Finance ledger"],
+    "EMP009": ["Marketing assets", "Sales CRM"],
+    "EMP010": ["Source code repo", "Marketing assets"],
+    "EMP011": ["Finance ledger", "Board reports", "Payroll DB"],
+    "EMP012": ["Admin console", "Production servers"],
+    "EMP013": ["Customer PII DB", "Sales CRM"],
+    "EMP014": ["Production servers", "Admin console", "CI/CD pipeline"],
+    "EMP015": ["Finance ledger", "Sales CRM"],
+}
+# Privileged actions each role legitimately performs.
+ROLE_ACTIONS = {
+    "EMP003": ["grant_access"],
+    "EMP004": ["deploy_release", "restart_service", "create_api_token"],
+    "EMP008": ["run_payroll"],
+    "EMP011": ["approve_payment"],
+    "EMP012": ["reset_user_password", "grant_access"],
+    "EMP014": ["restart_service", "deploy_release"],
+}
+# Attackers switch these off to stay hidden or keep access.
+TAMPERING_ACTIONS = {"disable_audit_logs", "disable_mfa", "delete_backups"}
+
+for _pid, _p in PROFILES.items():
+    _p["resources"] = ROLE_RESOURCES.get(_pid, [])
+    _p["actions"] = ROLE_ACTIONS.get(_pid, [])
+
 CSV_FIELDS = [
     "user_id", "timestamp", "city", "country", "lat", "lon", "ip", "os", "browser",
     "failed_attempts", "files_downloaded", "mb_downloaded", "api_calls",
-    "sensitive_access", "session_minutes", "scenario",
+    "sensitive_access", "session_minutes", "resources", "actions", "scenario",
 ]
+LIST_FIELDS = ("resources", "actions")
 
 
 def work_hours(profile: dict) -> list[int]:
@@ -108,15 +147,28 @@ def _foreign_ip(rng: random.Random) -> str:
     return f"{rng.choice([45, 91, 185, 193, 194])}.{rng.randint(0, 255)}.{rng.randint(0, 255)}.{rng.randint(1, 254)}"
 
 
-def _event(profile, ts, city, country, lat, lon, ip, device, failed, files, mb, api, sensitive, minutes, scenario=None) -> dict:
+def _event(profile, ts, city, country, lat, lon, ip, device, failed, files, mb, api, sensitive, minutes,
+           scenario=None, resources=(), actions=()) -> dict:
     return {
         "user_id": profile["id"], "timestamp": ts, "city": city, "country": country,
         "lat": lat, "lon": lon, "ip": ip, "os": device[0], "browser": device[1],
         "failed_attempts": int(failed), "files_downloaded": int(max(0, round(files))),
         "mb_downloaded": round(max(0.0, mb), 1), "api_calls": int(max(0, round(api))),
         "sensitive_access": int(max(0, round(sensitive))), "session_minutes": int(max(1, round(minutes))),
+        "resources": sorted(set(resources)), "actions": sorted(set(actions)),
         "scenario": scenario,
     }
+
+
+def _usual_resources(profile: dict, rng: random.Random) -> list[str]:
+    own = profile["resources"]
+    return rng.sample(own, min(len(own), rng.choice([0, 1, 1, 2])))
+
+
+def _new_resources(profile: dict, rng: random.Random, n: int) -> list[str]:
+    """High-value systems this employee has never touched."""
+    unfamiliar = [r for r in HIGH_VALUE if r not in profile["resources"]]
+    return rng.sample(unfamiliar, min(n, len(unfamiliar)))
 
 
 def normal_session(profile: dict, ts: datetime, rng: random.Random, city: str | None = None) -> dict:
@@ -130,8 +182,10 @@ def normal_session(profile: dict, ts: datetime, rng: random.Random, city: str | 
     api = rng.gauss(profile["api"], profile["api"] * 0.25)
     sensitive = sum(1 for _ in range(files) if rng.random() < profile["sensitive"])
     minutes = rng.gauss(240, 90)
+    actions = [rng.choice(profile["actions"])] if profile["actions"] and rng.random() < 0.35 else []
     return _event(profile, ts, city, "India", lat, lon, _indian_ip(rng), device,
-                  failed, files, mb, api, sensitive, minutes)
+                  failed, files, mb, api, sensitive, minutes,
+                  resources=_usual_resources(profile, rng), actions=actions)
 
 
 def _foreign(rng: random.Random, choices: list[str]):
@@ -146,24 +200,27 @@ def make_attack(profile: dict, scenario: str, ts: datetime, rng: random.Random) 
     if scenario == "account_takeover":
         city, country, lat, lon = _foreign(rng, ["Frankfurt", "Moscow", "Lagos", "Sao Paulo"])
         files = p["files"] * rng.uniform(25, 70)
+        actions = ["bulk_export"] + (["disable_audit_logs"] if rng.random() < 0.5 else [])
         return [_event(p, ts, city, country, lat, lon, _foreign_ip(rng), ("Linux", "Firefox"),
                        rng.randint(0, 1), files, files * p["mb_per_file"] * 1.2,
                        p["api"] * rng.uniform(3, 8), files * rng.uniform(0.5, 0.8),
-                       rng.uniform(25, 60), scenario)]
+                       rng.uniform(25, 60), scenario,
+                       resources=p["resources"] + _new_resources(p, rng, 2), actions=actions)]
     if scenario == "insider_exfiltration":
         lat, lon = INDIAN_CITIES[p["home_city"]]
         files = p["files"] * rng.uniform(15, 40)
         return [_event(p, ts, p["home_city"], "India", lat, lon, _indian_ip(rng), p["device"],
                        0, files, files * p["mb_per_file"] * rng.uniform(2.5, 4.0),
                        p["api"] * rng.uniform(0.8, 1.5), files * rng.uniform(0.6, 0.85),
-                       rng.uniform(60, 150), scenario)]
+                       rng.uniform(60, 150), scenario,
+                       resources=p["resources"] + _new_resources(p, rng, 1), actions=["bulk_export"])]
     if scenario == "credential_stuffing":
         city, country, lat, lon = _foreign(rng, ["Amsterdam", "Ashburn", "Singapore"])
         files = p["files"] * rng.uniform(2, 6)
         return [_event(p, ts, city, country, lat, lon, _foreign_ip(rng), ("Linux", "Headless Chrome"),
                        rng.randint(8, 30), files, files * p["mb_per_file"],
                        p["api"] * rng.uniform(1.5, 3), files * rng.uniform(0.2, 0.5),
-                       rng.uniform(5, 20), scenario)]
+                       rng.uniform(5, 20), scenario, resources=p["resources"][:1])]
     if scenario == "impossible_travel":
         before = normal_session(p, ts - timedelta(minutes=rng.randint(20, 45)), rng)
         lat0, lon0 = INDIAN_CITIES[p["home_city"]]
@@ -174,7 +231,8 @@ def make_attack(profile: dict, scenario: str, ts: datetime, rng: random.Random) 
         after = _event(p, ts, city, country, lat, lon, _foreign_ip(rng), ("Windows 10", "Firefox"),
                        rng.randint(0, 2), files, files * p["mb_per_file"],
                        p["api"] * rng.uniform(1, 2), files * rng.uniform(0.3, 0.6),
-                       rng.uniform(20, 50), scenario)
+                       rng.uniform(20, 50), scenario,
+                       resources=p["resources"] + _new_resources(p, rng, 1), actions=["disable_mfa"])
         return [before, after]
     if scenario == "rogue_ai_agent":
         city, country, lat, lon = _foreign(rng, ["Ashburn", "Singapore", "Frankfurt"])
@@ -182,7 +240,9 @@ def make_attack(profile: dict, scenario: str, ts: datetime, rng: random.Random) 
         return [_event(p, ts, city, country, lat, lon, _foreign_ip(rng), ("Linux", "python-httpx"),
                        0, files, files * p["mb_per_file"],
                        max(p["api"], 50) * rng.uniform(40, 120), files * rng.uniform(0.3, 0.6),
-                       rng.uniform(5, 15), scenario)]
+                       rng.uniform(5, 15), scenario,
+                       resources=p["resources"] + _new_resources(p, rng, 1),
+                       actions=["create_api_token", "bulk_export"])]
     if scenario == "stealth_exfiltration":
         # Each signal stays below its rule threshold (downloads < 4x, API < 5x, sensitive < 4x, 2 failed logins).
         city = rng.choice([c for c in INDIAN_CITIES if c != p["home_city"]])
@@ -192,7 +252,7 @@ def make_attack(profile: dict, scenario: str, ts: datetime, rng: random.Random) 
                        2, files, files * p["mb_per_file"] * 1.1,
                        p["api"] * rng.uniform(3.5, 4.5),
                        max(1.0, p["files"] * p["sensitive"]) * rng.uniform(2.5, 3.2),
-                       rng.uniform(40, 90), scenario)]
+                       rng.uniform(40, 90), scenario, resources=_usual_resources(p, rng))]
     raise ValueError(f"Unknown scenario: {scenario}")
 
 
@@ -250,6 +310,7 @@ def save_csv(events: list[dict], path: Path) -> None:
         writer.writeheader()
         for e in events:
             writer.writerow({**{k: e[k] for k in CSV_FIELDS},
+                             **{k: "|".join(e[k]) for k in LIST_FIELDS},
                              "timestamp": e["timestamp"].isoformat(), "scenario": e["scenario"] or ""})
 
 
@@ -265,6 +326,8 @@ def load_csv(path: Path) -> list[dict]:
                 e[k] = int(float(row[k]))
             for k in floats:
                 e[k] = float(row[k])
+            for k in LIST_FIELDS:  # older CSVs may not have these columns
+                e[k] = [x for x in (row.get(k) or "").split("|") if x]
             e["scenario"] = row.get("scenario") or None
             events.append(e)
     events.sort(key=lambda e: e["timestamp"])

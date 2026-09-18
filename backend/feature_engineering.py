@@ -8,6 +8,8 @@ from collections import Counter
 
 import numpy as np
 
+from simulator import TAMPERING_ACTIONS
+
 FEATURE_NAMES = [
     "hours_outside_usual_window",
     "unusual_weekend_login",
@@ -20,6 +22,8 @@ FEATURE_NAMES = [
     "data_volume_ratio_log",
     "api_ratio_log",
     "sensitive_ratio_log",
+    "new_sensitive_systems",
+    "unfamiliar_admin_actions",
 ]
 
 AUTOMATION_CLIENTS = {"python-httpx", "python-requests", "curl", "Headless Chrome", "Go-http-client"}
@@ -59,6 +63,7 @@ def build_twin(events: list[dict]) -> dict:
             "known_countries": [], "home_city": "unknown", "weekend_rate": 0.0,
             "avg_files": 10.0, "avg_mb": 20.0, "avg_api": 100.0, "avg_sensitive": 1.0,
             "avg_failed": 0.0, "avg_session_minutes": 240.0,
+            "familiar_resources": [], "familiar_actions": [],
         }
     hours = Counter(e["timestamp"].hour for e in events)
     devices = Counter(device_key(e) for e in events)
@@ -85,6 +90,8 @@ def build_twin(events: list[dict]) -> dict:
         "avg_sensitive": avg("sensitive_access"),
         "avg_failed": avg("failed_attempts"),
         "avg_session_minutes": avg("session_minutes"),
+        "familiar_resources": sorted({r for e in events for r in e.get("resources", [])}),
+        "familiar_actions": sorted({a for e in events for a in e.get("actions", [])}),
     }
 
 
@@ -120,6 +127,11 @@ def compute_features(event: dict, twin: dict, prev: dict | None) -> tuple[np.nda
     api_ratio = (event["api_calls"] + 1) / (twin["avg_api"] + 1)
     sensitive_ratio = (event["sensitive_access"] + 1) / (twin["avg_sensitive"] + 1)
 
+    resources, actions = event.get("resources", []), event.get("actions", [])
+    new_resources = [r for r in resources if r not in twin["familiar_resources"]]
+    new_actions = [a for a in actions if a not in twin["familiar_actions"]]
+    tampering = [a for a in actions if a in TAMPERING_ACTIONS]
+
     vector = np.array([
         hours_outside,
         float(unusual_weekend),
@@ -132,6 +144,8 @@ def compute_features(event: dict, twin: dict, prev: dict | None) -> tuple[np.nda
         _log_ratio(event["mb_downloaded"], twin["avg_mb"]),
         _log_ratio(event["api_calls"], twin["avg_api"]),
         _log_ratio(event["sensitive_access"], twin["avg_sensitive"]),
+        len(new_resources),
+        len(new_actions),
     ], dtype=float)
 
     facts = {
@@ -167,5 +181,10 @@ def compute_features(event: dict, twin: dict, prev: dict | None) -> tuple[np.nda
         "sensitive": event["sensitive_access"],
         "avg_sensitive": twin["avg_sensitive"],
         "sensitive_ratio": round(sensitive_ratio, 1),
+        "resources": resources,
+        "new_resources": new_resources,
+        "actions": actions,
+        "new_actions": new_actions,
+        "tampering": tampering,
     }
     return vector, facts

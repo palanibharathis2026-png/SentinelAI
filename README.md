@@ -1,10 +1,12 @@
 # 🛡️ SentinelAI: Behavioral Security for Detecting Compromised Users
 
-**Code Cortex 3.0 · Security track (Cyber & Defense)**
+**Code Cortex 3.0 · Security track (Cyber & Defense) · Team INNOVEX**
+
+> ### *The password was correct. The behavior was not.*
 
 Passwords, OTPs and session tokens get stolen. Once an attacker has them, they *are* the user as far as authentication is concerned. SentinelAI asks a different question: **does this session behave like the real person?**
 
-Each employee gets a **Digital Behavioral Twin** learned from their history: when they log in, from where, on which device, how many files and API calls they make, and how often they touch sensitive data. Every new session is compared with that twin, scored **0-100** by an ML + rules hybrid, and handled automatically:
+Each employee gets a **Digital Behavioral Twin** learned from their history: when they log in, from where, on which device, how many files and API calls they make, which sensitive systems they open, and which admin actions they normally perform. Every new session is compared with that twin, scored **0-100** by an ML + rules hybrid, and handled automatically:
 
 | Risk | Tier | Action |
 |---|---|---|
@@ -14,6 +16,24 @@ Each employee gets a **Digital Behavioral Twin** learned from their history: whe
 | 80-100 | BLOCK | Block session, auto-lock the account, alert the SOC |
 
 An **AI Security Analyst** (Claude, with an offline fallback) explains each incident in plain English.
+
+![Landing page](docs/screenshots/landing.png)
+
+## Features
+
+| | Feature | What it shows |
+|---|---|---|
+| 🏠 | **Overview page** | The problem, how it works in 4 steps, live accuracy and a mini threat map |
+| 📊 | **SOC dashboard** | Live sessions, risk timeline, open alerts, riskiest employees, department heatmap |
+| 🌍 | **Global threat map** | Login locations worldwide; animated attack arcs from the employee's home city to the suspicious login |
+| 🧪 | **Risk Lab** | "Play attacker": sliders and presets change a session and the ML score, signals and fusion formula update live |
+| 🎯 | **Attack simulator** | Six attack types launched on any employee in one click |
+| 🔔 | **Real-time alerts** | Pop-up toasts with an alarm sound (mute toggle) whenever a session is challenged or blocked |
+| 🔍 | **Incident view** | Risk gauge, "Password ✓ Login ✓ Behaviour ✗" banner, reasons with points, systems and admin actions touched, twin comparison |
+| 🤖 | **AI security analyst** | Plain-English incident summary (Claude, with an offline template fallback) |
+| 📄 | **Incident report** | One-click *Download report* (print / save as PDF) |
+| 🔒 | **Automatic response** | BLOCK verdicts auto-lock the account; analysts can resolve, mark false positive, block or unblock |
+| 📈 | **Model & accuracy** | ML-only vs rules-only vs hybrid on held-out attacks |
 
 ![SOC dashboard](docs/screenshots/dashboard.png)
 
@@ -26,7 +46,7 @@ User activity
      ↓
 Login / API / file / device logs
      ↓
-Feature extraction (session vs. Digital Twin, 11 features)
+Feature extraction (session vs. Digital Twin, 13 features)
      ↓
 ML anomaly detection (Isolation Forest + robust distance, from scratch in numpy)
      ↓
@@ -45,18 +65,18 @@ SOC dashboard (React)
 | Database | PostgreSQL (Docker) / SQLite (local) |
 | ML | Isolation Forest + RobustDistance, **implemented from scratch with numpy** |
 | AI analyst | Claude via the Anthropic SDK, with a built-in template fallback |
-| Frontend | React, Vite, Tailwind CSS, Recharts |
+| Frontend | React, Vite, Tailwind CSS, Recharts, d3-geo (threat map) |
 | Deployment | Docker Compose |
 
 ## How detection works
 
-1. **Digital twin.** From each employee's past sessions: usual login hours, known devices, known cities and countries, and average files, data volume, API calls and sensitive-resource access.
-2. **Features.** Each session becomes 11 numbers that measure drift from the twin, e.g. hours outside the usual window, new device or country, travel speed from the last trusted session, failed logins, and log-ratios of downloads, data volume, API calls and sensitive access.
+1. **Digital twin.** From each employee's past sessions: usual login hours, known devices, known cities and countries, average files, data volume, API calls and sensitive-resource access, plus the sensitive systems (Payroll DB, Customer PII DB, ...) and admin actions they normally use.
+2. **Features.** Each session becomes 13 numbers that measure drift from the twin, e.g. hours outside the usual window, new device or country, travel speed from the last trusted session, failed logins, log-ratios of downloads, data volume, API calls and sensitive access, and the number of never-before-used sensitive systems and admin actions.
 3. **ML (unsupervised, trained only on normal behavior).**
    - *Isolation Forest* spots unusual **combinations** of features.
    - *Robust distance* (median/MAD) spots extreme **magnitudes**, which a forest cannot score beyond its most extreme training point.
    - ML risk = the higher of the two, calibrated so a typical session is 0 and the 95th-percentile normal session is 25.
-4. **Signals.** Readable evidence with points: impossible travel, new country, unrecognized device, automation client, mass download, sensitive data access, machine-speed API usage, brute-force pattern and more.
+4. **Signals.** Readable evidence with points: impossible travel, new country, unrecognized device, automation client, mass download, sensitive data access, machine-speed API usage, brute-force pattern, first-time access to a sensitive system, unfamiliar admin action, **security tampering** (disabling audit logs or MFA, deleting backups) and more.
 5. **Fusion.** ML and signals are treated as independent evidence: `risk = 1 − (1 − ML)(1 − signals)`.
 6. **Response.** The risk tier decides the action. A BLOCK verdict auto-locks the account.
 
@@ -64,17 +84,17 @@ SOC dashboard (React)
 
 ## Results
 
-Evaluated on the most recent 10 days of the dataset (183 sessions containing 18 planted attacks the model never trained on). An alert means risk ≥ 60.
+Evaluated on the most recent 10 days of the dataset (190 sessions containing 18 planted attacks the model never trained on). An alert means risk ≥ 60.
 
 | Detector | Recall | Precision | False alarm rate |
 |---|---|---|---|
-| ML only | 94.4% | 100% | 0% |
+| ML only | 100% | 100% | 0% |
 | Rules only | 83.3% | 100% | 0% |
 | **SentinelAI hybrid** | **100%** | **100%** | **0%** |
 
-All 6 attack types were caught 3/3: account takeover, insider exfiltration, credential stuffing, impossible travel, rogue AI agent / API abuse, and **stealth (low-and-slow) exfiltration**. The stealth attack deliberately stays under every rule threshold. The rules score it around 8-18, and only the ML model catches it, which is why the system is hybrid.
+All 6 attack types were caught 3/3: account takeover, insider exfiltration, credential stuffing, impossible travel, rogue AI agent / API abuse, and **stealth (low-and-slow) exfiltration**. The stealth attack deliberately stays under every rule threshold, so the rules alone miss it and only the ML model catches it. The rules still matter: they turn the ML's "this is unusual" into readable reasons an analyst can act on, and a strong signal such as security tampering raises the risk even when the ML is unsure. That is why the system is hybrid.
 
-Robustness check across 8 differently seeded datasets: hybrid recall was 100% on every one, precision was at least 95%, and about 3% of normal sessions landed in MONITOR.
+Robustness check across 8 differently seeded datasets: hybrid recall was 100% on every one and precision was at least 94.7% (at most 1 false alarm per dataset).
 
 > ⚠️ **Honest note:** the data is synthetic. The hackathon's security dataset has no login/file/device logs, so SentinelAI ships a realistic simulator (15 employees, shift patterns, business trips, 6 attack types). Numbers on real enterprise logs would be lower. The pipeline accepts any CSV with the same columns, so it can be retrained on real data (e.g. the CERT Insider Threat dataset).
 
@@ -132,14 +152,19 @@ Put `ANTHROPIC_API_KEY=...` in `.env` at the repo root. Without a key, or if the
 
 ## Demo script (3-5 minutes)
 
-1. **Dashboard.** Live traffic is on and normal sessions stream in green. *"Every dot is a login compared with that employee's digital twin."*
-2. **Attack simulator → Account takeover** on *Pradish Kumar*. It appears as a red BLOCK and the account is auto-locked.
-3. **Open the incident.** Show the risk gauge, the "why it was flagged" list and the **digital twin vs this session** table.
-4. **Explain this session.** The AI analyst writes the incident summary.
-5. **Stealth exfiltration.** *"Every signal is under the rule thresholds, so the rules score it about 13. The ML still flags it."* This is the reason for the hybrid.
-6. **Model & Accuracy page.** ML only vs rules only vs hybrid, on data the model never saw.
+1. **Overview.** *"The password was correct. The behavior was not."* Walk through the 4 steps.
+2. **SOC dashboard.** Live traffic is on and normal sessions stream in green. *"Every dot is a login compared with that employee's digital twin."*
+3. **Attack simulator → Account takeover.** The alarm sounds, a toast pops up, the session appears as a red BLOCK and the account is auto-locked.
+4. **Open the incident.** Show the "Password ✓ Login ✓ Behaviour ✗" banner, the reasons, the systems and admin actions touched, and the twin comparison. Click **Explain this session**, then **Download report**.
+5. **Threat map.** The attack arc flies from the employee's city to the attacker's.
+6. **Risk Lab.** Start from *Normal day* (risk 0). Change the city to Moscow, then turn on `disable_audit_logs`, and watch the risk climb live. Try *Stealth leak* to show the ML catching what the rules miss.
+7. **Model & Accuracy page.** ML only vs rules only vs hybrid, on data the model never saw.
 
 ![Incident view](docs/screenshots/incident.png)
+
+![Global threat map](docs/screenshots/threat-map.png)
+
+![Risk Lab](docs/screenshots/risk-lab.png)
 
 ## API
 
@@ -157,6 +182,10 @@ Put `ANTHROPIC_API_KEY=...` in `.env` at the repo root. Without a key, or if the
 | GET | `/api/timeline` | Risk over time |
 | GET | `/api/scenarios` | Available attack simulations |
 | POST | `/api/simulate` | Launch an attack `{scenario, user_id?}` |
+| GET | `/api/map` | Login locations and attack arcs (`hours`) |
+| GET | `/api/departments` | Department x signal heatmap (7 days) |
+| GET | `/api/lab/options` | Risk Lab choices (employees, cities, devices, systems, actions) |
+| POST | `/api/lab/score` | Score a what-if session without saving it |
 | GET | `/api/model` | Evaluation metrics |
 | GET/POST | `/api/live` | Toggle background traffic |
 | POST | `/api/reset` | Reload the demo dataset |
@@ -170,7 +199,7 @@ SentinelAI/
 ├── backend/
 │   ├── main.py                 # FastAPI app and endpoints
 │   ├── detection_service.py    # pipeline: seed, train, score, evaluate, simulate
-│   ├── feature_engineering.py  # digital twin + 11 features
+│   ├── feature_engineering.py  # digital twin + 13 features
 │   ├── ml_detector.py          # Isolation Forest + RobustDistance (numpy)
 │   ├── risk_engine.py          # signals, fusion, risk tiers
 │   ├── analyst.py              # Claude / template incident explanations
@@ -178,8 +207,8 @@ SentinelAI/
 │   ├── database.py, models.py  # SQLAlchemy
 │   └── requirements.txt
 ├── frontend/src/
-│   ├── pages/                  # Dashboard, Employees, EmployeeDetail, Incident, Model
-│   ├── components/             # charts, gauge, alert feed, simulator, twin table
+│   ├── pages/                  # Landing, Dashboard, ThreatMapPage, RiskLab, Employees, Incident, Model, ...
+│   ├── components/             # threat map, heatmap, alert toasts, charts, gauge, simulator
 │   └── api.js
 ├── data/
 │   ├── synthetic_security_events.csv
@@ -202,6 +231,7 @@ SentinelAI/
 - Rolling twin updates with analyst feedback (false-positive labels fed back into training).
 - Session-token fingerprinting to catch cookie theft.
 - Detection of autonomous AI agents abusing internal APIs, using request-timing signatures.
+- Peer-group baselines (compare a new joiner with others in the same role).
 
 ## Team INNOVEX (Guild code CC-3048)
 

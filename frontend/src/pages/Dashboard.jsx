@@ -1,22 +1,26 @@
 import { Link } from "react-router-dom";
-import { Activity, Ban, BellRing, Gauge, Siren, TrendingUp } from "lucide-react";
+import { Activity, Ban, BellRing, Gauge, Globe2, Siren, TrendingUp } from "lucide-react";
 import { api } from "../api.js";
 import { usePolling } from "../hooks/usePolling.js";
 import StatCard from "../components/StatCard.jsx";
 import RiskTimeline from "../components/RiskTimeline.jsx";
 import AlertFeed from "../components/AlertFeed.jsx";
 import AttackSimulator from "../components/AttackSimulator.jsx";
+import DepartmentHeatmap from "../components/DepartmentHeatmap.jsx";
+import ThreatMap from "../components/ThreatMap.jsx";
 import { TIER_STYLES, riskHex } from "../utils/format.js";
 
 export default function Dashboard() {
   const stats = usePolling(api.stats, 4000);
   const alerts = usePolling(() => api.alerts("open"), 4000);
   const timeline = usePolling(() => api.timeline(72), 5000);
+  const map = usePolling(() => api.map(72), 6000);
 
   const refreshAll = () => {
     stats.refresh();
     alerts.refresh();
     timeline.refresh();
+    map.refresh();
   };
 
   const s = stats.data;
@@ -34,17 +38,17 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Security Operations Center</h1>
+        <h1 className="gradient-text text-3xl font-bold">Security Operations Center</h1>
         <p className="text-sm text-slate-400">
           Every session is compared with the employee&apos;s Digital Behavioral Twin and scored 0-100.
         </p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={Activity} label="Sessions (24h)" value={s?.sessions_24h} hint={`${s?.total_sessions ?? "-"} analysed in total`} />
-        <StatCard icon={BellRing} label="Open alerts" value={s?.open_alerts} hint="MFA + Block verdicts" accent="text-orange-400" />
-        <StatCard icon={Ban} label="Blocked accounts" value={s?.blocked_users} hint={`of ${s?.employees ?? "-"} employees`} accent="text-red-400" />
-        <StatCard icon={Gauge} label="Avg risk (24h)" value={s?.avg_risk_24h} hint="0 = identical to twin" accent="text-emerald-400" />
+        <StatCard icon={Activity} label="Sessions (24h)" value={s?.sessions_24h} hint={`${s?.total_sessions ?? "-"} analysed in total`} color="cyan" />
+        <StatCard icon={BellRing} label="Open alerts" value={s?.open_alerts} hint="MFA + Block verdicts" color="orange" />
+        <StatCard icon={Ban} label="Blocked accounts" value={s?.blocked_users} hint={`of ${s?.employees ?? "-"} employees`} color="red" />
+        <StatCard icon={Gauge} label="Avg risk (24h)" value={s?.avg_risk_24h} hint="0 = identical to twin" color="green" />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-3">
@@ -55,7 +59,7 @@ export default function Dashboard() {
               <span className="ml-auto text-xs font-normal tracking-normal text-slate-500 normal-case">click a dot to investigate</span>
             </div>
             <RiskTimeline points={timeline.data || []} />
-            <div className="mt-4 flex h-2 overflow-hidden rounded-full bg-slate-800">
+            <div className="mt-4 flex h-2.5 overflow-hidden rounded-full bg-slate-800">
               {Object.entries(TIER_STYLES).map(([tier, style]) => (
                 <div key={tier} style={{ width: `${((tiers[tier] || 0) / tierTotal) * 100}%`, background: style.hex }} />
               ))}
@@ -68,6 +72,14 @@ export default function Dashboard() {
                 </span>
               ))}
             </div>
+          </div>
+
+          <div className="card">
+            <div className="card-title">
+              <Globe2 className="h-4 w-4 text-cyan-400" /> Where logins came from (72 h)
+              <Link to="/map" className="ml-auto text-xs font-normal tracking-normal text-cyan-300 normal-case hover:underline">full map →</Link>
+            </div>
+            <ThreatMap data={map.data} compact />
           </div>
 
           <div className="card">
@@ -100,6 +112,8 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      <DepartmentHeatmap />
     </div>
   );
 }

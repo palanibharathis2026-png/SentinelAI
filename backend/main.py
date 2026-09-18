@@ -80,6 +80,7 @@ def event_out(e: Event, names: dict[str, str]) -> dict:
         "files_downloaded": e.files_downloaded, "mb_downloaded": e.mb_downloaded,
         "api_calls": e.api_calls, "sensitive_access": e.sensitive_access,
         "session_minutes": e.session_minutes, "source": e.source,
+        "resources": e.resources or [], "actions": e.actions or [], "lat": e.lat, "lon": e.lon,
         "ml_score": e.ml_score, "rule_score": e.rule_score, "risk": e.risk, "tier": e.tier,
         "action": e.action, "threat": e.threat, "reasons": e.reasons, "status": e.status,
         "simulated_scenario": simulator.SCENARIOS[e.scenario]["label"] if e.source == "simulated" and e.scenario else None,
@@ -288,6 +289,124 @@ def simulate(body: SimulateRequest, db: Session = Depends(get_db)):
     events = sentinel.simulate(db, body.scenario, body.user_id)
     names = _names(db)
     return [event_out(e, names) for e in events]
+
+
+# ------------------------------------------------------------------ risk lab
+LAB_DEVICES = {
+    "usual": "Usual work device",
+    "second": "Known second device (phone)",
+    "new": "Brand-new laptop",
+    "bot": "Automation script (python-httpx)",
+}
+
+
+@app.get("/api/lab/options")
+def lab_options():
+    return {
+        "cities": [{"city": c, "country": v[0]} for c, v in simulator.LOCATIONS.items()],
+        "devices": [{"id": k, "label": v} for k, v in LAB_DEVICES.items()],
+        "resources": sorted({r for rs in simulator.ROLE_RESOURCES.values() for r in rs} | set(simulator.HIGH_VALUE)),
+        "actions": sorted({a for acts in simulator.ROLE_ACTIONS.values() for a in acts}
+                          | simulator.TAMPERING_ACTIONS | {"bulk_export"}),
+        "employees": [{"id": p["id"], "name": p["name"], "role": p["role"], "home_city": p["home_city"],
+                       "resources": p["resources"], "actions": p["actions"], "files": p["files"],
+                       "api": p["api"], "hours": p["hours"]} for p in simulator.PROFILES.values()],
+    }
+
+
+class ScoreRequest(BaseModel):
+    user_id: str
+    hour: int = 11
+    weekend: bool = False
+    city: str = "Chennai"
+    device: str = "usual"
+    files: int = 10
+    mb_per_file: float | None = None
+    api_calls: int = 100
+    sensitive: int = 0
+    failed_attempts: int = 0
+    minutes_since_last: float = 240
+    resources: list[str] = []
+    actions: list[str] = []
+
+
+@app.post("/api/lab/score")
+def lab_score(body: ScoreRequest, db: Session = Depends(get_db)):
+    """What-if scoring: build a hypothetical session and score it without storing it."""
+    p = simulator.PROFILES.get(body.user_id)
+    if not p:
+        raise HTTPException(404, "Unknown employee")
+    if body.city not in simulator.LOCATIONS or body.device not in LAB_DEVICES:
+        raise HTTPException(400, "Unknown city or device")
+    country, lat, lon = simulator.LOCATIONS[body.city]
+    device = {"usual": p["device"], "second": p["alt_device"], "new": ("Linux", "Firefox"),
+              "bot": ("Linux", "python-httpx")}[body.device]
+    ts = simulator.now_ist().replace(hour=max(0, min(23, body.hour)), minute=15, second=0)
+    while (ts.weekday() >= 5) != body.weekend:
+        ts -= timedelta(days=1)
+    files = max(0, body.files)
+    event = {
+        "user_id": p["id"], "timestamp": ts, "city": body.city, "country": country, "lat": lat, "lon": lon,
+        "ip": "10.0.0.1" if country == "India" else "185.220.101.7", "os": device[0], "browser": device[1],
+        "failed_attempts": max(0, body.failed_attempts), "files_downloaded": files,
+        "mb_downloaded": round(files * (body.mb_per_file or p["mb_per_file"]), 1),
+        "api_calls": max(0, body.api_calls), "sensitive_access": max(0, body.sensitive),
+        "session_minutes": 60, "resources": sorted(set(body.resources)), "actions": sorted(set(body.actions)),
+        "scenario": None,
+    }
+    with sentinel.lock:
+        result = sentinel.preview(db, event, max(1.0, body.minutes_since_last))
+    return result | {"formula": f"1 - (1 - {result['ml_score'] / 100:.2f}) x (1 - {result['rule_score'] / 100:.2f})"}
+
+
+# ------------------------------------------------------------------ threat map
+@app.get("/api/map")
+def threat_map(hours: int = Query(24 * 7, le=24 * 60), db: Session = Depends(get_db)):
+    """Where sessions come from, plus attack arcs from the employee's home city to the suspicious login."""
+    since = _latest_time(db) - timedelta(hours=hours)
+    rows = db.scalars(select(Event).where(Event.timestamp >= since).order_by(Event.timestamp)).all()
+    names = _names(db)
+    cities: dict[str, dict] = {}
+    arcs = []
+    for e in rows:
+        c = cities.setdefault(e.city, {"city": e.city, "country": e.country, "lat": e.lat, "lon": e.lon,
+                                       "sessions": 0, "alerts": 0, "max_risk": 0})
+        c["sessions"] += 1
+        c["max_risk"] = max(c["max_risk"], e.risk)
+        if e.tier in ALERT_TIERS:
+            c["alerts"] += 1
+            home = simulator.PROFILES.get(e.user_id, {}).get("home_city")
+            if home in simulator.LOCATIONS and home != e.city:
+                _, hlat, hlon = simulator.LOCATIONS[home]
+                arcs.append({"id": e.id, "from": {"city": home, "lat": hlat, "lon": hlon},
+                             "to": {"city": e.city, "lat": e.lat, "lon": e.lon},
+                             "risk": e.risk, "tier": e.tier, "threat": e.threat,
+                             "name": names.get(e.user_id, e.user_id), "timestamp": e.timestamp})
+    return {"cities": sorted(cities.values(), key=lambda c: -c["sessions"]), "arcs": arcs[-40:]}
+
+
+# ------------------------------------------------------------------ departments
+@app.get("/api/departments")
+def departments(db: Session = Depends(get_db)):
+    """Department x threat-type heatmap over the last 7 days."""
+    since = _latest_time(db) - timedelta(days=7)
+    dept = dict(db.execute(select(Employee.id, Employee.department)).all())
+    rows = db.scalars(select(Event).where(Event.timestamp >= since)).all()
+    out: dict[str, dict] = {}
+    for e in rows:
+        d = out.setdefault(dept.get(e.user_id, "Unknown"),
+                           {"department": dept.get(e.user_id, "Unknown"), "sessions": 0, "alerts": 0,
+                            "risk_sum": 0, "max_risk": 0, "signals": {}})
+        d["sessions"] += 1
+        d["risk_sum"] += e.risk
+        d["max_risk"] = max(d["max_risk"], e.risk)
+        if e.tier in ALERT_TIERS:
+            d["alerts"] += 1
+        for r in e.reasons or []:
+            d["signals"][r["signal"]] = d["signals"].get(r["signal"], 0) + 1
+    for d in out.values():
+        d["avg_risk"] = round(d.pop("risk_sum") / d["sessions"], 1)
+    return sorted(out.values(), key=lambda d: (-d["alerts"], -d["avg_risk"]))
 
 
 @app.get("/api/model")
