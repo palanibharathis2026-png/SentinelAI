@@ -1,7 +1,7 @@
 {
   "name": "SentinelAI behavioural anomaly detector",
   "version": "1.0",
-  "trained_at": "2026-09-18T21:55:12",
+  "trained_at": "2026-09-18T22:25:39",
   "type": "Unsupervised anomaly detection ensemble (trained only on normal behaviour)",
   "algorithms": [
     {
@@ -137,6 +137,8 @@
     "baseline_days": "0-13 (builds digital twins)",
     "training_days": "14-34",
     "training_sessions": 298,
+    "analyst_feedback_sessions": 0,
+    "feedback_weight": 5,
     "training_attacks": 0,
     "test_days": "35+ (held out, contains planted attacks)"
   },
@@ -214,6 +216,6 @@
   "limitations": [
     "Trained on synthetic data; accuracy on real enterprise logs will be lower.",
     "A new employee has no twin yet, so early sessions are scored against defaults.",
-    "Behaviour drifts over time; twins should be rebuilt regularly."
+    "Twins follow drift only through low-risk sessions and analyst labels; a very slow, patient attacker could still shift a twin over many weeks."
   ]
 }

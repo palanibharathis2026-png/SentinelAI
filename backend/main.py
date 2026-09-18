@@ -203,13 +203,39 @@ class StatusUpdate(BaseModel):
 
 
 @app.patch("/api/events/{event_id}/status")
-def update_event_status(event_id: int, body: StatusUpdate, db: Session = Depends(get_db)):
+def update_event_status(event_id: int, body: StatusUpdate, request: Request, db: Session = Depends(get_db)):
     if body.status not in ("open", "resolved", "false_positive"):
         raise HTTPException(400, "status must be open, resolved or false_positive")
     event = _get_event(db, event_id)
+    before = {"risk": event.risk, "tier": event.tier, "threat": event.threat}
+    was = event.status
     event.status = body.status
     db.commit()
-    return {"id": event.id, "status": event.status}
+    out = {"id": event.id, "status": event.status}
+    if "false_positive" in (was, body.status):
+        # Feedback loop: the twin learns (or un-learns) this session straight away.
+        changes = sentinel.learn_user(db, event.user_id)
+        out["learning"] = {"changes": changes, "before": before, "after": sentinel.rescore_preview(db, event)}
+    audit(db, request, "alert_feedback", str(event.id), f"{event.user_id}: {was} -> {body.status}")
+    return out
+
+
+@app.get("/api/learning")
+def learning(db: Session = Depends(get_db)):
+    """State of the self-learning loop: labels, twins that learned, and every model version."""
+    out = sentinel.learning_summary(db)
+    who = _names(db)
+    for t in out["twins"]:
+        t["name"] = who.get(t["user_id"], t["user_id"])
+    return out
+
+
+@app.post("/api/learning/retrain")
+def learning_retrain(request: Request, db: Session = Depends(get_db)):
+    result = sentinel.retrain(db)
+    audit(db, request, "model_retrain", result.get("version"),
+          ("accepted: " if result["accepted"] else "rejected: ") + result["reason"])
+    return result
 
 
 @app.get("/api/users")

@@ -92,6 +92,7 @@ The model is saved as files in [`model/`](model/): `sentinel_model.npz` (all 200
 | 🖥️ | **Desktop notifications** | Windows notifications for blocks and logins, even when the dashboard tab is in the background |
 | 🛡️ | **Security Center** | Controls in force and the audit log of every sign-in and admin decision |
 | 🧠 | **Trained model files** | `model/sentinel_model.npz` + `model_card.json`, shown and downloadable on the Model page |
+| 🎓 | **Self-learning loop** | Marking an alert "False positive" teaches that person's twin at once; twins follow drift from safe recent sessions; "Retrain with feedback" trains a challenger model that goes live only if it misses no held-out attacks (champion / challenger, versioned) |
 | 📧 | **Email OTP + access control** | Staff sign in with password + emailed code; admin grants per-system access; no-permission attempts lock the account until unlocked; unfamiliar-email detection; Mail Outbox |
 | 🔐 | **Login** | Admin login guards the dashboard; staff portal for live demo logins, shown as *Staff online now* |
 | 🏠 | **Overview page** | The problem, how it works in 4 steps, live accuracy and a mini threat map |

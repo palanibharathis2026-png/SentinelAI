@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { BrainCircuit, Loader2, RotateCcw, Target } from "lucide-react";
 import { api } from "../api.js";
+import LearningLoop from "../components/LearningLoop.jsx";
 import ModelCard from "../components/ModelCard.jsx";
 import { usePolling } from "../hooks/usePolling.js";
 import { TIER_STYLES, pct } from "../utils/format.js";
@@ -55,7 +56,9 @@ export default function Model() {
         </button>
       </div>
 
-      <ModelCard />
+      <ModelCard key={m.trained_on + h.fp + h.recall} />
+
+      <LearningLoop onModelChange={refresh} />
 
       <div className="card overflow-x-auto">
         <div className="card-title">

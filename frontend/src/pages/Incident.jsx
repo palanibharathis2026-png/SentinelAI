@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Bot, CheckCircle2, Download, Fingerprint, KeyRound, Loader2, Lock, RefreshCw, Server, ShieldAlert, ThumbsDown, Unlock, XCircle } from "lucide-react";
+import { Bot, CheckCircle2, Download, Fingerprint, GraduationCap, KeyRound, Loader2, Lock, RefreshCw, Server, ShieldAlert, ThumbsDown, Unlock, XCircle } from "lucide-react";
 import { api } from "../api.js";
 import { usePolling } from "../hooks/usePolling.js";
 import RiskGauge from "../components/RiskGauge.jsx";
@@ -19,6 +19,7 @@ export default function Incident() {
   const { data, error, refresh } = usePolling(() => api.event(id), 0, [id]);
   const [explaining, setExplaining] = useState(false);
   const [explainError, setExplainError] = useState(null);
+  const [learning, setLearning] = useState(null);
 
   if (error) return <div className="card text-red-300">{error}</div>;
   if (!data) return <div className="text-slate-500">Loading...</div>;
@@ -39,7 +40,8 @@ export default function Incident() {
   }
 
   async function setStatus(status) {
-    await api.setEventStatus(ev.id, status);
+    const res = await api.setEventStatus(ev.id, status);
+    setLearning(res.learning ? { ...res.learning, status } : null);
     refresh();
   }
 
@@ -89,6 +91,8 @@ export default function Incident() {
           </button>
         </div>
       </div>
+
+      {learning && <LearningResult learning={learning} name={emp.name.split(" ")[0]} />}
 
       {ev.risk >= 30 && (
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl border border-white/10 bg-gradient-to-r from-emerald-500/10 via-slate-900/40 to-rose-500/15 px-5 py-3">
@@ -190,6 +194,38 @@ export default function Incident() {
         </div>
         <TwinComparison rows={comparison} />
       </div>
+    </div>
+  );
+}
+
+const LEARN_LABELS = {
+  known_devices: "device", known_cities: "city", known_countries: "country",
+  familiar_resources: "system", familiar_actions: "admin action", active_hours: "working hour",
+};
+
+// Shown right after the analyst gives feedback: what the twin learned and how this session scores now.
+function LearningResult({ learning, name }) {
+  const { changes, before, after, status } = learning;
+  const facts = Object.entries(LEARN_LABELS).flatMap(([key, label]) =>
+    (changes[key] || []).map((v) => `${label}: ${key === "active_hours" ? `${String(v).padStart(2, "0")}:00` : v}`));
+  const unlearned = status !== "false_positive";
+  return (
+    <div className="no-print rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-5 py-3 text-sm">
+      <div className="flex items-center gap-2 font-semibold text-emerald-200">
+        <GraduationCap className="h-4 w-4" />
+        {unlearned ? `Feedback removed: ${name}'s twin forgot this session` : `SentinelAI learned from your feedback`}
+      </div>
+      {!unlearned && (
+        <div className="mt-1 text-slate-300">
+          {facts.length ? `${name}'s twin now knows: ${facts.join(" · ")}` : `${name}'s twin updated its averages with this session.`}
+        </div>
+      )}
+      <div className="mt-1 text-slate-300">
+        This same session: <span className="font-mono">{before.risk} {before.tier}</span> →{" "}
+        <span className="font-mono font-semibold text-slate-100">{after.risk} {after.tier}</span>
+        {!unlearned && after.risk >= 60 && " (still risky: security rules like decoys, brute force or tampering are never learned away)"}
+      </div>
+      <div className="mt-1 text-xs text-slate-400">Retrain the model with all labels on the Model &amp; accuracy page.</div>
     </div>
   );
 }

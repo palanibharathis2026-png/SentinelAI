@@ -63,6 +63,8 @@ export const api = {
   scenarios: () => request("/api/scenarios"),
   simulate: (scenario, userId) => post("/api/simulate", { scenario, user_id: userId || null }),
   model: () => request("/api/model"),
+  learning: () => request("/api/learning"),
+  retrain: () => post("/api/learning/retrain"),
   modelCard: () => request("/api/model/card"),
   downloadModel: async (name) => {
     // Files need the login token too, so fetch them and save the result from the browser.

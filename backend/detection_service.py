@@ -5,6 +5,15 @@ History timeline (45 days by default):
   days 14-34  training -> the anomaly models learn what normal drift looks like
   days 35-45  test     -> attacks are planted here; used to measure accuracy
 Live and simulated sessions are scored against twins built from days 0-34.
+
+Self-learning loop (analyst feedback):
+  - An alert marked "false positive" is folded into that person's twin at once.
+  - Twins also absorb low-risk (ALLOW) live sessions from the last 30 days once they
+    are 12 hours old, so they follow slow changes in habits. Alerts, blocked accounts and
+    confirmed attacks are never learned, so an attacker cannot teach the model.
+  - "Retrain" trains a challenger model with the labelled false alarms added (weighted),
+    tests it on the held-out attacks, and only replaces the live model if it misses
+    no more attacks and raises no more false alarms (champion / challenger).
 """
 import hashlib
 import json
@@ -17,14 +26,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 import simulator
 from database import reset_db
 from feature_engineering import FEATURE_NAMES, build_twin, compute_features
 from ml_detector import AnomalyDetector, save_detector, split_usage
-from models import Employee, Event
+from models import Employee, Event, Setting
 from risk_engine import TIERS, assess
 
 log = logging.getLogger("sentinel.engine")
@@ -38,6 +47,10 @@ MODEL_FILE, CARD_FILE = "sentinel_model.npz", "model_card.json"
 BASELINE_DAYS = 14
 TRAIN_END_DAY = 35
 ALERT_THRESHOLD = 60  # MFA or BLOCK counts as "detected"
+LEARN_WINDOW_DAYS = 30  # twins absorb recent low-risk sessions from this many days
+LEARN_MIN_AGE_HOURS = 12  # a session is learned only once it is finished
+FEEDBACK_WEIGHT = 5  # each analyst-labelled false alarm counts as this many training sessions
+VERSIONS_KEY = "model_versions"
 
 FEATURE_DESCRIPTIONS = {
     "hours_outside_usual_window": "Hours between the login time and the person's usual working window",
@@ -86,7 +99,14 @@ class SentinelEngine:
         self.detector: AnomalyDetector | None = None
         self.card: dict = {}
         self.twins: dict[str, dict] = {}
+        self.base_twins: dict[str, dict] = {}  # built from history only; used for the fixed test set
+        self.learned: dict[str, dict] = {}  # user -> sessions learned since training
         self.metrics: dict = {}
+        self.version = "1.0"
+        self.feedback_used = 0
+        self._events: list[dict] = []
+        self._day = None
+        self._train_X: np.ndarray | None = None
         # Devices enrolled by passing an email one-time code (staff portal): trusted like known devices.
         self.enrolled_devices: dict[str, set[str]] = {}
         self.lock = threading.RLock()
@@ -99,11 +119,19 @@ class SentinelEngine:
             else:
                 history = db.scalars(select(Event).where(Event.source == "history").order_by(Event.timestamp)).all()
                 self._fit([event_dict(e) for e in history])
+            self._versions(db)
+            self.learn_all(db)
+            if self._feedback_rows(db):
+                self.retrain(db, record=False)  # restore the model that the saved feedback produced
 
     def reset(self, db: Session) -> None:
         with self.lock:
             reset_db()
+            db.query(Setting).filter(Setting.key == VERSIONS_KEY).delete()
+            db.commit()
             self._seed(db)
+            self.learned = {}
+            self._versions(db)
 
     def _load_history(self) -> list[dict]:
         if DATA_PATH.exists():
@@ -139,12 +167,15 @@ class SentinelEngine:
         db.commit()
         log.info("Seeded %d sessions", len(events))
 
-    def _score_sequence(self, events: list[dict]) -> list[tuple[dict, dict, dict]]:
+    def _score_sequence(self, events: list[dict], detector: AnomalyDetector | None = None,
+                        twins: dict | None = None) -> list[tuple[dict, dict, dict]]:
         """Score chronologically ordered sessions, each compared with that user's last trusted session."""
+        detector = detector or self.detector
         results, trusted = [], {}
         for e in events:
-            vec, facts = compute_features(e, self.twin(e["user_id"]), trusted.get(e["user_id"]))
-            verdict = assess(facts, float(self.detector.risk(vec)[0]))
+            twin = (twins.get(e["user_id"]) or build_twin([])) if twins is not None else self.twin(e["user_id"])
+            vec, facts = compute_features(e, twin, trusted.get(e["user_id"]))
+            verdict = assess(facts, float(detector.risk(vec)[0]))
             results.append((e, facts, verdict))
             if verdict["tier"] != "BLOCK":
                 trusted[e["user_id"]] = e
@@ -167,11 +198,13 @@ class SentinelEngine:
                 X.append(vec)
             last[e["user_id"]] = e
 
-        self.detector = AnomalyDetector().fit(np.array(X))
-        self.twins = {u: build_twin([e for e in events if e["user_id"] == u and day(e) < TRAIN_END_DAY])
-                      for u in users}
+        self._events, self._day, self._train_X = events, day, np.array(X)
+        self.detector = AnomalyDetector().fit(self._train_X)
+        self.base_twins = {u: build_twin(self._history_of(u)) for u in users}
+        self.twins = dict(self.base_twins)
+        self.version, self.feedback_used = "1.0", 0
         self.metrics = self._evaluate(events, day)
-        self.card = self._model_card(events, day, np.array(X))
+        self.card = self._model_card(events, day, self._train_X)
         self._save_model()
         log.info("Model trained on %d sessions; test recall %.2f precision %.2f",
                  len(X), self.metrics["hybrid"]["recall"], self.metrics["hybrid"]["precision"])
@@ -184,7 +217,7 @@ class SentinelEngine:
         train = [e for e in events if BASELINE_DAYS <= day(e) < TRAIN_END_DAY]
         return {
             "name": "SentinelAI behavioural anomaly detector",
-            "version": "1.0",
+            "version": self.version,
             "trained_at": simulator.now_ist().isoformat(),
             "type": "Unsupervised anomaly detection ensemble (trained only on normal behaviour)",
             "algorithms": [
@@ -211,6 +244,8 @@ class SentinelEngine:
                 "baseline_days": f"0-{BASELINE_DAYS - 1} (builds digital twins)",
                 "training_days": f"{BASELINE_DAYS}-{TRAIN_END_DAY - 1}",
                 "training_sessions": len(X),
+                "analyst_feedback_sessions": self.feedback_used,
+                "feedback_weight": FEEDBACK_WEIGHT,
                 "training_attacks": sum(1 for e in train if e["scenario"]),
                 "test_days": f"{TRAIN_END_DAY}+ (held out, contains planted attacks)",
             },
@@ -220,7 +255,8 @@ class SentinelEngine:
             "limitations": [
                 "Trained on synthetic data; accuracy on real enterprise logs will be lower.",
                 "A new employee has no twin yet, so early sessions are scored against defaults.",
-                "Behaviour drifts over time; twins should be rebuilt regularly.",
+                "Twins follow drift only through low-risk sessions and analyst labels; a very slow, "
+                "patient attacker could still shift a twin over many weeks.",
             ],
         }
 
@@ -232,9 +268,11 @@ class SentinelEngine:
         except OSError:
             log.warning("Could not save the model to %s", MODEL_DIR)
 
-    def _evaluate(self, events: list[dict], day) -> dict:
+    def _evaluate(self, events: list[dict], day, detector: AnomalyDetector | None = None) -> dict:
+        """Accuracy on the held-out test days, always against the history-only twins so versions compare fairly."""
+        detector = detector or self.detector
         rows = [(e["scenario"], v["ml_score"], v["rule_score"], v["risk"])
-                for e, _, v in self._score_sequence(events) if day(e) >= TRAIN_END_DAY]
+                for e, _, v in self._score_sequence(events, detector, self.base_twins) if day(e) >= TRAIN_END_DAY]
         labels = np.array([r[0] is not None for r in rows])
         ml = np.array([r[1] for r in rows])
         rules = np.array([r[2] for r in rows])
@@ -252,9 +290,142 @@ class SentinelEngine:
             "rules_only": _score_report(labels, rules >= ALERT_THRESHOLD),
             "hybrid": _score_report(labels, hybrid >= ALERT_THRESHOLD),
             "per_scenario": per_scenario,
-            "trained_on": self.detector.trained_on,
+            "trained_on": detector.trained_on,
             "features": FEATURE_NAMES,
             "tiers": [{"min": t[0], "tier": t[1], "action": t[2]} for t in TIERS],
+        }
+
+    # ---------------------------------------------------------- self-learning
+    def _history_of(self, user_id: str) -> list[dict]:
+        return [e for e in self._events if e["user_id"] == user_id and self._day(e) < TRAIN_END_DAY]
+
+    @staticmethod
+    def _feedback_rows(db: Session, user_id: str | None = None) -> list[Event]:
+        q = select(Event).where(Event.status == "false_positive")
+        if user_id:
+            q = q.where(Event.user_id == user_id)
+        return db.scalars(q.order_by(Event.timestamp)).all()
+
+    def _learnable(self, db: Session, user_id: str) -> tuple[list[Event], list[Event]]:
+        """(analyst-confirmed false alarms, recent finished low-risk sessions) for one person."""
+        emp = db.get(Employee, user_id)
+        feedback = self._feedback_rows(db, user_id)
+        if emp is not None and emp.status == "blocked":
+            return feedback, []
+        now = simulator.now_ist()
+        recent = db.scalars(select(Event).where(
+            Event.user_id == user_id, Event.source.in_(("live", "portal")), Event.tier == "ALLOW",
+            Event.status == "open", Event.timestamp >= now - timedelta(days=LEARN_WINDOW_DAYS),
+            Event.timestamp <= now - timedelta(hours=LEARN_MIN_AGE_HOURS),
+        )).all()
+        return feedback, recent
+
+    def learn_user(self, db: Session, user_id: str) -> dict:
+        """Rebuild one twin from history + what the analyst and recent safe sessions taught it."""
+        with self.lock:
+            before = self.twins.get(user_id) or build_twin([])
+            feedback, recent = self._learnable(db, user_id)
+            self.twins[user_id] = build_twin(self._history_of(user_id) + [event_dict(r) for r in feedback + recent])
+            self.learned[user_id] = {"feedback": len(feedback), "recent": len(recent)}
+            after = self.twins[user_id]
+            added = {key: [x for x in after[key] if x not in before[key]]
+                     for key in ("known_devices", "known_cities", "known_countries",
+                                 "familiar_resources", "familiar_actions", "active_hours")}
+            return {"learned_sessions": len(feedback) + len(recent), **{k: v for k, v in added.items() if v}}
+
+    def learn_all(self, db: Session) -> None:
+        for uid in db.scalars(select(Employee.id)).all():
+            self.learn_user(db, uid)
+
+    def rescore_preview(self, db: Session, row: Event) -> dict:
+        """How the same session would score now, with the current twin and model (nothing is stored)."""
+        prev = self._trusted_prev(db, row.user_id, row.timestamp, exclude_id=row.id)
+        vec, facts = compute_features(event_dict(row), self.twin(row.user_id), prev)
+        v = assess(facts, float(self.detector.risk(vec)[0]))
+        return {"risk": v["risk"], "tier": v["tier"], "threat": v["threat"]}
+
+    def _versions(self, db: Session) -> list[dict]:
+        row = db.get(Setting, VERSIONS_KEY)
+        versions = json.loads(row.value) if row and row.value else []
+        if not versions:
+            h = self.metrics["hybrid"]
+            versions = [{"version": "1.0", "at": simulator.now_ist().isoformat(), "accepted": True,
+                         "feedback_labels": 0, "recall": h["recall"], "precision": h["precision"], "fp": h["fp"],
+                         "note": "Base model trained on normal history"}]
+            db.merge(Setting(key=VERSIONS_KEY, value=json.dumps(versions)))
+            db.commit()
+        return versions
+
+    def retrain(self, db: Session, record: bool = True) -> dict:
+        """Champion / challenger retraining with the analyst's false-positive labels."""
+        with self.lock:
+            self.learn_all(db)
+            feedback = self._feedback_rows(db)
+            if not feedback:
+                return {"accepted": False, "reason": "No false-positive labels yet. Mark a wrong alert as "
+                                                     "'False positive' on its incident page, then retrain."}
+            if record and len(feedback) == self.feedback_used:
+                return {"accepted": False, "version": self.version,
+                        "reason": f"No new labels since version {self.version}. Twins were refreshed."}
+            vecs = []
+            for r in feedback:
+                prev = self._trusted_prev(db, r.user_id, r.timestamp, exclude_id=r.id)
+                vec, _ = compute_features(event_dict(r), self.base_twins.get(r.user_id) or build_twin([]), prev)
+                vecs.append(vec)
+            V = np.array(vecs)
+            X = np.vstack([self._train_X, np.repeat(V, FEEDBACK_WEIGHT, axis=0)])
+            challenger = AnomalyDetector().fit(X)
+
+            new = self._evaluate(self._events, self._day, challenger)
+            o, n = self.metrics["hybrid"], new["hybrid"]  # champion = the live model
+            # ML risk the labelled false alarms get (lower = the model learned they are normal)
+            ml_before = round(float(np.mean(self.detector.risk(V))), 1)
+            ml_after = round(float(np.mean(challenger.risk(V))), 1)
+            accepted = n["recall"] >= o["recall"] and n["fp"] <= o["fp"]
+
+            versions = self._versions(db)
+            if accepted:
+                self.detector, self.metrics, self.feedback_used = challenger, new, len(feedback)
+                if record:
+                    major, minor = versions[-1]["version"].split(".") if versions else ("1", "0")
+                    self.version = f"{major}.{int(minor) + 1}"
+                else:
+                    self.version = next((v["version"] for v in reversed(versions) if v["accepted"]), self.version)
+                self.card = self._model_card(self._events, self._day, X)
+                self._save_model()
+            result = {
+                "accepted": accepted, "version": self.version, "feedback_labels": len(feedback),
+                "weight": FEEDBACK_WEIGHT, "training_sessions": len(X),
+                "labelled_ml_risk": {"before": ml_before, "after": ml_after},
+                "champion": {k: o[k] for k in ("recall", "precision", "fp")},
+                "challenger": {k: n[k] for k in ("recall", "precision", "fp")},
+                "reason": "Challenger is at least as good on the held-out attacks, so it replaced the live model."
+                          if accepted else
+                          "Challenger would miss more attacks or raise more false alarms on the held-out test, "
+                          "so the current model stays live.",
+            }
+            if record:
+                versions.append({"version": self.version if accepted else f"{self.version} (rejected)",
+                                 "at": simulator.now_ist().isoformat(), "accepted": accepted,
+                                 "feedback_labels": len(feedback), "recall": n["recall"],
+                                 "precision": n["precision"], "fp": n["fp"], "note": result["reason"]})
+                db.merge(Setting(key=VERSIONS_KEY, value=json.dumps(versions)))
+                db.commit()
+            return result
+
+    def learning_summary(self, db: Session) -> dict:
+        counts = dict(db.execute(select(Event.status, func.count()).where(
+            or_(Event.tier.in_(("MFA", "BLOCK")), Event.status != "open")).group_by(Event.status)).all())
+        fp, confirmed = counts.get("false_positive", 0), counts.get("resolved", 0)
+        return {
+            "version": self.version,
+            "versions": list(reversed(self._versions(db))),
+            "labels": {"false_positive": fp, "confirmed_attack": confirmed, "open_alerts": counts.get("open", 0)},
+            "analyst_precision": round(confirmed / (confirmed + fp), 3) if confirmed + fp else None,
+            "feedback_used": self.feedback_used,
+            "settings": {"window_days": LEARN_WINDOW_DAYS, "min_age_hours": LEARN_MIN_AGE_HOURS,
+                         "feedback_weight": FEEDBACK_WEIGHT},
+            "twins": [{"user_id": u, **v} for u, v in sorted(self.learned.items()) if v["feedback"] or v["recent"]],
         }
 
     # ---------------------------------------------------------------- scoring
