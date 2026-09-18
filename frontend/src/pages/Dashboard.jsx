@@ -1,0 +1,105 @@
+import { Link } from "react-router-dom";
+import { Activity, Ban, BellRing, Gauge, Siren, TrendingUp } from "lucide-react";
+import { api } from "../api.js";
+import { usePolling } from "../hooks/usePolling.js";
+import StatCard from "../components/StatCard.jsx";
+import RiskTimeline from "../components/RiskTimeline.jsx";
+import AlertFeed from "../components/AlertFeed.jsx";
+import AttackSimulator from "../components/AttackSimulator.jsx";
+import { TIER_STYLES, riskHex } from "../utils/format.js";
+
+export default function Dashboard() {
+  const stats = usePolling(api.stats, 4000);
+  const alerts = usePolling(() => api.alerts("open"), 4000);
+  const timeline = usePolling(() => api.timeline(72), 5000);
+
+  const refreshAll = () => {
+    stats.refresh();
+    alerts.refresh();
+    timeline.refresh();
+  };
+
+  const s = stats.data;
+  const tiers = s?.tiers_24h || {};
+  const tierTotal = Object.values(tiers).reduce((a, b) => a + b, 0) || 1;
+
+  if (stats.error && !s) {
+    return (
+      <div className="card border-red-500/40 text-red-300">
+        Cannot reach the SentinelAI API ({stats.error}). Is the backend running on port 8000?
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">Security Operations Center</h1>
+        <p className="text-sm text-slate-400">
+          Every session is compared with the employee&apos;s Digital Behavioral Twin and scored 0-100.
+        </p>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard icon={Activity} label="Sessions (24h)" value={s?.sessions_24h} hint={`${s?.total_sessions ?? "-"} analysed in total`} />
+        <StatCard icon={BellRing} label="Open alerts" value={s?.open_alerts} hint="MFA + Block verdicts" accent="text-orange-400" />
+        <StatCard icon={Ban} label="Blocked accounts" value={s?.blocked_users} hint={`of ${s?.employees ?? "-"} employees`} accent="text-red-400" />
+        <StatCard icon={Gauge} label="Avg risk (24h)" value={s?.avg_risk_24h} hint="0 = identical to twin" accent="text-emerald-400" />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-3">
+        <div className="space-y-6 xl:col-span-2">
+          <div className="card">
+            <div className="card-title">
+              <TrendingUp className="h-4 w-4 text-cyan-400" /> Session risk, last 72 hours
+              <span className="ml-auto text-xs font-normal tracking-normal text-slate-500 normal-case">click a dot to investigate</span>
+            </div>
+            <RiskTimeline points={timeline.data || []} />
+            <div className="mt-4 flex h-2 overflow-hidden rounded-full bg-slate-800">
+              {Object.entries(TIER_STYLES).map(([tier, style]) => (
+                <div key={tier} style={{ width: `${((tiers[tier] || 0) / tierTotal) * 100}%`, background: style.hex }} />
+              ))}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-400">
+              {Object.entries(TIER_STYLES).map(([tier, style]) => (
+                <span key={tier} className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full" style={{ background: style.hex }} />
+                  {style.label}: {tiers[tier] || 0}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-title">
+              <Siren className="h-4 w-4 text-red-400" /> Open alerts
+            </div>
+            <AlertFeed alerts={alerts.data} />
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <AttackSimulator onLaunched={refreshAll} />
+          <div className="card">
+            <div className="card-title">Riskiest employees (24h)</div>
+            <ul className="space-y-3">
+              {(s?.top_risky_users || []).map((u) => (
+                <li key={u.user_id}>
+                  <Link to={`/employees/${u.user_id}`} className="block hover:text-cyan-300">
+                    <div className="flex justify-between text-sm">
+                      <span>{u.name}</span>
+                      <span className="font-mono" style={{ color: riskHex(u.max_risk) }}>{u.max_risk}</span>
+                    </div>
+                    <div className="mt-1 h-1.5 rounded-full bg-slate-800">
+                      <div className="h-1.5 rounded-full" style={{ width: `${u.max_risk}%`, background: riskHex(u.max_risk) }} />
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
