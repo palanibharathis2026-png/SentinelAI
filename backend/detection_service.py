@@ -46,6 +46,45 @@ MODEL_DIR = Path(os.getenv("SENTINEL_MODEL_DIR", Path(__file__).resolve().parent
 MODEL_FILE, CARD_FILE = "sentinel_model.npz", "model_card.json"
 BASELINE_DAYS = 14
 TRAIN_END_DAY = 35
+LONG_DATASET_DAYS = 60  # longer datasets (e.g. CERT, 17 months) are split by share of time instead
+EXTERNAL_LABELS = {"cert_insider": "CERT insider (real labelled data)"}
+
+
+def split_days(span_days: int) -> tuple[int, int]:
+    """(baseline end, training end) day numbers: fixed for the 45-day demo data, 30% / 75% for long datasets."""
+    if span_days <= LONG_DATASET_DAYS:
+        return BASELINE_DAYS, TRAIN_END_DAY
+    return round(span_days * 0.30), round(span_days * 0.75)
+
+
+def _curves(labels: np.ndarray, scores: np.ndarray) -> dict:
+    """ROC and precision-recall curves over every alert threshold 0-100, with their areas."""
+    pos, neg = int(labels.sum()), int((~labels).sum())
+    roc, pr = [(0.0, 0.0)], []
+    for t in range(101, -1, -1):
+        flagged = scores >= t
+        tp, fp = int(np.sum(flagged & labels)), int(np.sum(flagged & ~labels))
+        tpr, fpr = (tp / pos if pos else 0.0), (fp / neg if neg else 0.0)
+        roc.append((fpr, tpr))
+        if tp + fp:
+            pr.append((tpr, tp / (tp + fp)))
+    roc.append((1.0, 1.0))
+    auc = sum((x2 - x1) * (y1 + y2) / 2 for (x1, y1), (x2, y2) in zip(roc, roc[1:]))
+    ap, last_recall = 0.0, 0.0
+    for recall, precision in pr:
+        ap += (recall - last_recall) * precision
+        last_recall = recall
+
+    def thin(points):
+        keep, seen = [], set()
+        for x, y in points:
+            key = (round(x, 3), round(y, 3))
+            if key not in seen:
+                seen.add(key)
+                keep.append([round(x, 4), round(y, 4)])
+        return keep
+
+    return {"roc": thin(roc), "pr": thin(pr), "auc": round(auc, 4), "average_precision": round(ap, 4)}
 ALERT_THRESHOLD = 60  # MFA or BLOCK counts as "detected"
 LEARN_WINDOW_DAYS = 30  # twins absorb recent low-risk sessions from this many days
 LEARN_MIN_AGE_HOURS = 12  # a session is learned only once it is finished
@@ -103,9 +142,12 @@ class SentinelEngine:
         self.learned: dict[str, dict] = {}  # user -> sessions learned since training
         self.metrics: dict = {}
         self.version = "1.0"
+        self.on_alert = None  # called with the event id of every new MFA / BLOCK alert (integrations)
+        self.learn_sources = ("live", "portal", "okta", "entra", "google", "cloudtrail", "sentinel")
         self.feedback_used = 0
         self._events: list[dict] = []
         self._day = None
+        self.baseline_days, self.train_end_day = BASELINE_DAYS, TRAIN_END_DAY
         self._train_X: np.ndarray | None = None
         # Devices enrolled by passing an email one-time code (staff portal): trusted like known devices.
         self.enrolled_devices: dict[str, set[str]] = {}
@@ -168,11 +210,15 @@ class SentinelEngine:
         log.info("Seeded %d sessions", len(events))
 
     def _score_sequence(self, events: list[dict], detector: AnomalyDetector | None = None,
-                        twins: dict | None = None) -> list[tuple[dict, dict, dict]]:
-        """Score chronologically ordered sessions, each compared with that user's last trusted session."""
+                        twins: dict | None = None, skip=None) -> list[tuple[dict, dict, dict]]:
+        """Score chronologically ordered sessions, each compared with that user's last trusted session.
+        Sessions where skip(e) is true are not scored; they only become the reference for the next one."""
         detector = detector or self.detector
         results, trusted = [], {}
         for e in events:
+            if skip is not None and skip(e):
+                trusted[e["user_id"]] = e
+                continue
             twin = (twins.get(e["user_id"]) or build_twin([])) if twins is not None else self.twin(e["user_id"])
             vec, facts = compute_features(e, twin, trusted.get(e["user_id"]))
             verdict = assess(facts, float(detector.risk(vec)[0]))
@@ -181,11 +227,14 @@ class SentinelEngine:
                 trusted[e["user_id"]] = e
         return results
 
-    def _fit(self, events: list[dict]) -> None:
+    def _fit(self, events: list[dict], save: bool = True) -> None:
         start = min(e["timestamp"] for e in events)
 
         def day(e):
             return (e["timestamp"] - start).days
+
+        BASELINE_DAYS, TRAIN_END_DAY = split_days(max(day(e) for e in events) + 1)  # noqa: N806
+        self.baseline_days, self.train_end_day = BASELINE_DAYS, TRAIN_END_DAY
 
         users = {e["user_id"] for e in events}
         baseline_twins = {u: build_twin([e for e in events if e["user_id"] == u and day(e) < BASELINE_DAYS])
@@ -205,13 +254,15 @@ class SentinelEngine:
         self.version, self.feedback_used = "1.0", 0
         self.metrics = self._evaluate(events, day)
         self.card = self._model_card(events, day, self._train_X)
-        self._save_model()
+        if save:
+            self._save_model()
         log.info("Model trained on %d sessions; test recall %.2f precision %.2f",
                  len(X), self.metrics["hybrid"]["recall"], self.metrics["hybrid"]["precision"])
 
     def _model_card(self, events: list[dict], day, X: np.ndarray) -> dict:
         """Human-readable description of the trained model: what it is, what it learned, how good it is."""
         det = self.detector
+        BASELINE_DAYS, TRAIN_END_DAY = self.baseline_days, self.train_end_day  # noqa: N806
         usage = split_usage(det, len(FEATURE_NAMES))
         data_bytes = DATA_PATH.read_bytes() if DATA_PATH.exists() else b""
         train = [e for e in events if BASELINE_DAYS <= day(e) < TRAIN_END_DAY]
@@ -237,7 +288,9 @@ class SentinelEngine:
                           "normal_spread": round(float(det.distance.model.scale[i]), 4)}
                          for i, n in enumerate(FEATURE_NAMES)],
             "training_data": {
-                "source": "Synthetic company activity from simulator.py (data/synthetic_security_events.csv)",
+                "source": "Synthetic company activity from simulator.py (data/synthetic_security_events.csv)"
+                          if DATA_PATH.name == "synthetic_security_events.csv" else f"External dataset: {DATA_PATH.name}",
+                "span_days": max(day(e) for e in events) + 1,
                 "sha256": hashlib.sha256(data_bytes).hexdigest() if data_bytes else None,
                 "employees": len({e["user_id"] for e in events}),
                 "sessions_total": len(events),
@@ -247,10 +300,12 @@ class SentinelEngine:
                 "analyst_feedback_sessions": self.feedback_used,
                 "feedback_weight": FEEDBACK_WEIGHT,
                 "training_attacks": sum(1 for e in train if e["scenario"]),
-                "test_days": f"{TRAIN_END_DAY}+ (held out, contains planted attacks)",
+                "test_days": f"{TRAIN_END_DAY}+ (held out, contains the attacks)",
             },
-            "evaluation": {k: self.metrics[k] for k in ("test_sessions", "test_attacks", "alert_threshold",
-                                                         "ml_only", "rules_only", "hybrid", "per_scenario")},
+            "evaluation": {**{k: self.metrics[k] for k in ("test_sessions", "test_attacks", "alert_threshold",
+                                                           "ml_only", "rules_only", "hybrid", "per_scenario")},
+                           "auc": {k: v["auc"] for k, v in self.metrics["curves"].items()},
+                           "average_precision": {k: v["average_precision"] for k, v in self.metrics["curves"].items()}},
             "files": {"model": f"model/{MODEL_FILE}", "card": f"model/{CARD_FILE}"},
             "limitations": [
                 "Trained on synthetic data; accuracy on real enterprise logs will be lower.",
@@ -271,17 +326,22 @@ class SentinelEngine:
     def _evaluate(self, events: list[dict], day, detector: AnomalyDetector | None = None) -> dict:
         """Accuracy on the held-out test days, always against the history-only twins so versions compare fairly."""
         detector = detector or self.detector
+        test_from = self.train_end_day
         rows = [(e["scenario"], v["ml_score"], v["rule_score"], v["risk"])
-                for e, _, v in self._score_sequence(events, detector, self.base_twins) if day(e) >= TRAIN_END_DAY]
+                for e, _, v in self._score_sequence(events, detector, self.base_twins,
+                                                     skip=lambda e: day(e) < test_from)]
         labels = np.array([r[0] is not None for r in rows])
         ml = np.array([r[1] for r in rows])
         rules = np.array([r[2] for r in rows])
         hybrid = np.array([r[3] for r in rows])
         per_scenario = {}
-        for name in simulator.SCENARIOS:
+        present = {r[0] for r in rows if r[0]}
+        for name in [s for s in simulator.SCENARIOS if s in present or not present - set(simulator.SCENARIOS)] + \
+                sorted(present - set(simulator.SCENARIOS)):
             hits = [r[3] >= ALERT_THRESHOLD for r in rows if r[0] == name]
-            per_scenario[name] = {"label": simulator.SCENARIOS[name]["label"],
-                                  "caught": int(sum(hits)), "total": len(hits)}
+            label = simulator.SCENARIOS[name]["label"] if name in simulator.SCENARIOS else \
+                EXTERNAL_LABELS.get(name, name.replace("_", " ").capitalize())
+            per_scenario[name] = {"label": label, "caught": int(sum(hits)), "total": len(hits)}
         return {
             "test_sessions": len(rows),
             "test_attacks": int(labels.sum()),
@@ -290,6 +350,8 @@ class SentinelEngine:
             "rules_only": _score_report(labels, rules >= ALERT_THRESHOLD),
             "hybrid": _score_report(labels, hybrid >= ALERT_THRESHOLD),
             "per_scenario": per_scenario,
+            "curves": {"ml_only": _curves(labels, ml), "rules_only": _curves(labels, rules),
+                       "hybrid": _curves(labels, hybrid)},
             "trained_on": detector.trained_on,
             "features": FEATURE_NAMES,
             "tiers": [{"min": t[0], "tier": t[1], "action": t[2]} for t in TIERS],
@@ -297,7 +359,7 @@ class SentinelEngine:
 
     # ---------------------------------------------------------- self-learning
     def _history_of(self, user_id: str) -> list[dict]:
-        return [e for e in self._events if e["user_id"] == user_id and self._day(e) < TRAIN_END_DAY]
+        return [e for e in self._events if e["user_id"] == user_id and self._day(e) < self.train_end_day]
 
     @staticmethod
     def _feedback_rows(db: Session, user_id: str | None = None) -> list[Event]:
@@ -314,7 +376,7 @@ class SentinelEngine:
             return feedback, []
         now = simulator.now_ist()
         recent = db.scalars(select(Event).where(
-            Event.user_id == user_id, Event.source.in_(("live", "portal")), Event.tier == "ALLOW",
+            Event.user_id == user_id, Event.source.in_(self.learn_sources), Event.tier == "ALLOW",
             Event.status == "open", Event.timestamp >= now - timedelta(days=LEARN_WINDOW_DAYS),
             Event.timestamp <= now - timedelta(hours=LEARN_MIN_AGE_HOURS),
         )).all()
@@ -469,12 +531,14 @@ class SentinelEngine:
             self._auto_block(db, row)
             db.commit()
             db.refresh(row)
+            self._notify(row, None)
             return row
 
     def rescore(self, db: Session, row: Event) -> Event:
         """Re-score a stored session after its activity changed (staff portal sessions grow as people work)."""
         with self.lock:
             e = event_dict(row)
+            old_tier = row.tier
             fresh = self._score(e, self._trusted_prev(db, row.user_id, row.timestamp, exclude_id=row.id), row.source)
             for k in ("ml_score", "rule_score", "risk", "tier", "action", "threat", "reasons", "features"):
                 setattr(row, k, getattr(fresh, k))
@@ -482,7 +546,17 @@ class SentinelEngine:
             self._auto_block(db, row)
             db.commit()
             db.refresh(row)
+            self._notify(row, old_tier)
             return row
+
+    def _notify(self, row: Event, old_tier: str | None) -> None:
+        """Tell the integrations about a new alert, or one that just escalated (MFA -> BLOCK)."""
+        rank = {"MFA": 1, "BLOCK": 2}
+        if self.on_alert and rank.get(row.tier, 0) > rank.get(old_tier, 0):
+            try:
+                self.on_alert(row.id)
+            except Exception:  # an outside channel must never break scoring
+                log.exception("Alert dispatch failed")
 
     def simulate(self, db: Session, scenario: str, user_id: str | None = None) -> list[Event]:
         rng = random.Random()

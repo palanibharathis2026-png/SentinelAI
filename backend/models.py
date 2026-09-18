@@ -119,3 +119,16 @@ class AuditLog(Base):
     target: Mapped[str | None] = mapped_column(String(80), nullable=True)
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+
+
+class IntegrationLog(Base):
+    """Every alert pushed to an outside channel (Slack, Teams, SMS, WhatsApp, webhook, SIEM) and every test."""
+
+    __tablename__ = "integration_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    channel: Mapped[str] = mapped_column(String(20))
+    event_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(12))  # sent | failed | received
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)

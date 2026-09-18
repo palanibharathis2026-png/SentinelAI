@@ -66,6 +66,7 @@ export const api = {
   learning: () => request("/api/learning"),
   retrain: () => post("/api/learning/retrain"),
   modelCard: () => request("/api/model/card"),
+  evaluation: () => request("/api/model/evaluation"),
   downloadModel: async (name) => {
     // Files need the login token too, so fetch them and save the result from the browser.
     const token = getAuth()?.token;
@@ -74,6 +75,23 @@ export const api = {
     const url = URL.createObjectURL(await res.blob());
     const a = Object.assign(document.createElement("a"), { href: url, download: name === "model" ? "sentinel_model.npz" : "model_card.json" });
     a.click();
+    URL.revokeObjectURL(url);
+  },
+  integrations: () => request("/api/integrations"),
+  updateIntegration: (body) => request("/api/integrations", { method: "PUT", body: JSON.stringify(body) }),
+  testIntegration: (channel) => post("/api/integrations/test", { channel }),
+  useDemoReceiver: () => post("/api/integrations/demo-receiver"),
+  createIngestKey: (label) => post("/api/integrations/keys", { label }),
+  revokeIngestKey: (id) => request(`/api/integrations/keys/${id}`, { method: "DELETE" }),
+  ingestSample: (source) => request(`/api/integrations/sample/${source}`),
+  ingest: (source, payload) => post(`/api/ingest/${source}`, payload),
+  exportEvents: async (format) => {
+    const token = getAuth()?.token;
+    const res = await fetch(`${BASE}/api/export/events?format=${format}&hours=168`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) throw new Error("Export failed");
+    const url = URL.createObjectURL(await res.blob());
+    const name = { cef: "sentinelai-alerts.cef.log", jsonl: "sentinelai-alerts.jsonl", csv: "sentinelai-alerts.csv" }[format];
+    Object.assign(document.createElement("a"), { href: url, download: name }).click();
     URL.revokeObjectURL(url);
   },
   live: () => request("/api/live"),

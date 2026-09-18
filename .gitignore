@@ -20,3 +20,8 @@ Thumbs.db
 
 # Portable Node.js downloaded by start.bat
 .tools/
+
+# CMU CERT dataset and anything converted from it: its licence forbids redistribution.
+# Only accuracy results (model/evaluation.json) are published.
+data/cert*
+cert/

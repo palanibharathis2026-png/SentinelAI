@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { BrainCircuit, Loader2, RotateCcw, Target } from "lucide-react";
 import { api } from "../api.js";
+import Evaluation from "../components/Evaluation.jsx";
 import LearningLoop from "../components/LearningLoop.jsx";
 import ModelCard from "../components/ModelCard.jsx";
 import { usePolling } from "../hooks/usePolling.js";
@@ -98,6 +99,8 @@ export default function Model() {
           that stay under every threshold; ML alone can miss attacks that look normal on average. Fusing both catches more.
         </p>
       </div>
+
+      <Evaluation curves={m.curves} />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="card">

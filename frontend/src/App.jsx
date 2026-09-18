@@ -4,6 +4,7 @@ import { getAuth, onAuthChange } from "./auth.js";
 import Layout from "./components/Layout.jsx";
 import Landing from "./pages/Landing.jsx";
 import AccessControl from "./pages/AccessControl.jsx";
+import Integrations from "./pages/Integrations.jsx";
 import MailOutbox from "./pages/MailOutbox.jsx";
 import SecurityCenter from "./pages/SecurityCenter.jsx";
 import Login from "./pages/Login.jsx";
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="/access" element={<AccessControl />} />
         <Route path="/mail" element={<MailOutbox />} />
         <Route path="/security" element={<SecurityCenter />} />
+        <Route path="/integrations" element={<Integrations />} />
         <Route path="*" element={<Landing />} />
       </Routes>
     </Layout>

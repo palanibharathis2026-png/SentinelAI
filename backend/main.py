@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import asyncio  # noqa: E402
+import json  # noqa: E402
 import logging  # noqa: E402
 import os  # noqa: E402
 import socket  # noqa: E402
@@ -18,6 +19,7 @@ from sqlalchemy import func, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 import analyst  # noqa: E402
+import integrations  # noqa: E402
 import auth  # noqa: E402
 import portal  # noqa: E402
 import simulator  # noqa: E402
@@ -73,7 +75,8 @@ OPEN_PATHS = {"/api/health", "/api/auth/login", "/api/auth/admin-2fa", "/api/aut
 @app.middleware("http")
 async def require_login(request: Request, call_next):
     path = request.url.path
-    if request.method == "OPTIONS" or not path.startswith("/api/") or path in OPEN_PATHS:
+    if (request.method == "OPTIONS" or not path.startswith("/api/") or path in OPEN_PATHS
+            or path.startswith(integrations.OPEN_PREFIXES)):
         return await call_next(request)
     header = request.headers.get("authorization", "")
     claims = auth.verify(header[7:] if header.lower().startswith("bearer ") else "")
@@ -326,6 +329,8 @@ def simulate(body: SimulateRequest, request: Request, db: Session = Depends(get_
 
 
 app.include_router(portal.router)
+app.include_router(integrations.router)
+sentinel.on_alert = integrations.dispatch_async
 
 
 # ------------------------------------------------------------------ risk lab
@@ -455,6 +460,15 @@ def model_info():
 def model_card():
     """What the trained model is, what it learned and how it was tested."""
     return sentinel.card
+
+
+@app.get("/api/model/evaluation")
+def model_evaluation():
+    """Cross-validation over many datasets and results on real labelled data (written by evaluate.py)."""
+    try:
+        return json.loads((MODEL_DIR / "evaluation.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
 
 
 @app.get("/api/model/download/{name}")

@@ -1,0 +1,620 @@
+{
+ "cross_validation": {
+  "evaluated_at": "2026-09-19T00:37:27",
+  "method": "8 independently generated 45-day company histories; the model is trained from scratch on each and tested on its held-out days",
+  "runs": [
+   {
+    "seed": 101,
+    "test_sessions": 180,
+    "test_attacks": 18,
+    "training_sessions": 321,
+    "per_scenario": {
+     "account_takeover": {
+      "label": "Account takeover",
+      "caught": 3,
+      "total": 3
+     },
+     "insider_exfiltration": {
+      "label": "Insider data exfiltration",
+      "caught": 3,
+      "total": 3
+     },
+     "credential_stuffing": {
+      "label": "Credential stuffing",
+      "caught": 3,
+      "total": 3
+     },
+     "impossible_travel": {
+      "label": "Impossible travel",
+      "caught": 3,
+      "total": 3
+     },
+     "rogue_ai_agent": {
+      "label": "Rogue AI agent / API abuse",
+      "caught": 3,
+      "total": 3
+     },
+     "stealth_exfiltration": {
+      "label": "Stealth (low-and-slow) exfiltration",
+      "caught": 3,
+      "total": 3
+     }
+    },
+    "ml_only": {
+     "recall": 1.0,
+     "precision": 1.0,
+     "f1": 1.0,
+     "fp": 0,
+     "auc": 1.0,
+     "average_precision": 1.0
+    },
+    "rules_only": {
+     "recall": 0.833,
+     "precision": 1.0,
+     "f1": 0.909,
+     "fp": 0,
+     "auc": 1.0,
+     "average_precision": 1.0
+    },
+    "hybrid": {
+     "recall": 1.0,
+     "precision": 1.0,
+     "f1": 1.0,
+     "fp": 0,
+     "auc": 1.0,
+     "average_precision": 1.0
+    }
+   },
+   {
+    "seed": 202,
+    "test_sessions": 180,
+    "test_attacks": 18,
+    "training_sessions": 310,
+    "per_scenario": {
+     "account_takeover": {
+      "label": "Account takeover",
+      "caught": 3,
+      "total": 3
+     },
+     "insider_exfiltration": {
+      "label": "Insider data exfiltration",
+      "caught": 3,
+      "total": 3
+     },
+     "credential_stuffing": {
+      "label": "Credential stuffing",
+      "caught": 3,
+      "total": 3
+     },
+     "impossible_travel": {
+      "label": "Impossible travel",
+      "caught": 3,
+      "total": 3
+     },
+     "rogue_ai_agent": {
+      "label": "Rogue AI agent / API abuse",
+      "caught": 3,
+      "total": 3
+     },
+     "stealth_exfiltration": {
+      "label": "Stealth (low-and-slow) exfiltration",
+      "caught": 3,
+      "total": 3
+     }
+    },
+    "ml_only": {
+     "recall": 1.0,
+     "precision": 1.0,
+     "f1": 1.0,
+     "fp": 0,
+     "auc": 1.0,
+     "average_precision": 1.0
+    },
+    "rules_only": {
+     "recall": 0.833,
+     "precision": 1.0,
+     "f1": 0.909,
+     "fp": 0,
+     "auc": 1.0,
+     "average_precision": 1.0
+    },
+    "hybrid": {
+     "recall": 1.0,
+     "precision": 1.0,
+     "f1": 1.0,
+     "fp": 0,
+     "auc": 1.0,
+     "average_precision": 1.0
+    }
+   },
+   {
+    "seed": 303,
+    "test_sessions": 181,
+    "test_attacks": 18,
+    "training_sessions": 314,
+    "per_scenario": {
+     "account_takeover": {
+      "label": "Account takeover",
+      "caught": 3,
+      "total": 3
+     },
+     "insider_exfiltration": {
+      "label": "Insider data exfiltration",
+      "caught": 3,
+      "total": 3
+     },
+     "credential_stuffing": {
+      "label": "Credential stuffing",
+      "caught": 3,
+      "total": 3
+     },
+     "impossible_travel": {
+      "label": "Impossible travel",
+      "caught": 3,
+      "total": 3
+     },
+     "rogue_ai_agent": {
+      "label": "Rogue AI agent / API abuse",
+      "caught": 3,
+      "total": 3
+     },
+     "stealth_exfiltration": {
+      "label": "Stealth (low-and-slow) exfiltration",
+      "caught": 3,
+      "total": 3
+     }
+    },
+    "ml_only": {
+     "recall": 0.889,
+     "precision": 1.0,
+     "f1": 0.941,
+     "fp": 0,
+     "auc": 1.0,
+     "average_precision": 1.0
+    },
+    "rules_only": {
+     "recall": 0.833,
+     "precision": 1.0,
+     "f1": 0.909,
+     "fp": 0,
+     "auc": 0.9985,
+     "average_precision": 0.9762
+    },
+    "hybrid": {
+     "recall": 1.0,
+     "precision": 1.0,
+     "f1": 1.0,
+     "fp": 0,
+     "auc": 1.0,
+     "average_precision": 1.0
+    }
+   },
+   {
+    "seed": 404,
+    "test_sessions": 184,
+    "test_attacks": 18,
+    "training_sessions": 321,
+    "per_scenario": {
+     "account_takeover": {
+      "label": "Account takeover",
+      "caught": 3,
+      "total": 3
+     },
+     "insider_exfiltration": {
+      "label": "Insider data exfiltration",
+      "caught": 3,
+      "total": 3
+     },
+     "credential_stuffing": {
+      "label": "Credential stuffing",
+      "caught": 3,
+      "total": 3
+     },
+     "impossible_travel": {
+      "label": "Impossible travel",
+      "caught": 3,
+      "total": 3
+     },
+     "rogue_ai_agent": {
+      "label": "Rogue AI agent / API abuse",
+      "caught": 3,
+      "total": 3
+     },
+     "stealth_exfiltration": {
+      "label": "Stealth (low-and-slow) exfiltration",
+      "caught": 3,
+      "total": 3
+     }
+    },
+    "ml_only": {
+     "recall": 1.0,
+     "precision": 1.0,
+     "f1": 1.0,
+     "fp": 0,
+     "auc": 1.0,
+     "average_precision": 1.0
+    },
+    "rules_only": {
+     "recall": 0.833,
+     "precision": 1.0,
+     "f1": 0.909,
+     "fp": 0,
+     "auc": 0.9985,
+     "average_precision": 0.9762
+    },
+    "hybrid": {
+     "recall": 1.0,
+     "precision": 1.0,
+     "f1": 1.0,
+     "fp": 0,
+     "auc": 1.0,
+     "average_precision": 1.0
+    }
+   },
+   {
+    "seed": 505,
+    "test_sessions": 198,
+    "test_attacks": 18,
+    "training_sessions": 313,
+    "per_scenario": {
+     "account_takeover": {
+      "label": "Account takeover",
+      "caught": 3,
+      "total": 3
+     },
+     "insider_exfiltration": {
+      "label": "Insider data exfiltration",
+      "caught": 3,
+      "total": 3
+     },
+     "credential_stuffing": {
+      "label": "Credential stuffing",
+      "caught": 3,
+      "total": 3
+     },
+     "impossible_travel": {
+      "label": "Impossible travel",
+      "caught": 3,
+      "total": 3
+     },
+     "rogue_ai_agent": {
+      "label": "Rogue AI agent / API abuse",
+      "caught": 3,
+      "total": 3
+     },
+     "stealth_exfiltration": {
+      "label": "Stealth (low-and-slow) exfiltration",
+      "caught": 3,
+      "total": 3
+     }
+    },
+    "ml_only": {
+     "recall": 1.0,
+     "precision": 1.0,
+     "f1": 1.0,
+     "fp": 0,
+     "auc": 1.0,
+     "average_precision": 1.0
+    },
+    "rules_only": {
+     "recall": 0.833,
+     "precision": 1.0,
+     "f1": 0.909,
+     "fp": 0,
+     "auc": 0.996,
+     "average_precision": 0.9747
+    },
+    "hybrid": {
+     "recall": 1.0,
+     "precision": 1.0,
+     "f1": 1.0,
+     "fp": 0,
+     "auc": 1.0,
+     "average_precision": 1.0
+    }
+   },
+   {
+    "seed": 606,
+    "test_sessions": 187,
+    "test_attacks": 18,
+    "training_sessions": 310,
+    "per_scenario": {
+     "account_takeover": {
+      "label": "Account takeover",
+      "caught": 3,
+      "total": 3
+     },
+     "insider_exfiltration": {
+      "label": "Insider data exfiltration",
+      "caught": 3,
+      "total": 3
+     },
+     "credential_stuffing": {
+      "label": "Credential stuffing",
+      "caught": 3,
+      "total": 3
+     },
+     "impossible_travel": {
+      "label": "Impossible travel",
+      "caught": 3,
+      "total": 3
+     },
+     "rogue_ai_agent": {
+      "label": "Rogue AI agent / API abuse",
+      "caught": 3,
+      "total": 3
+     },
+     "stealth_exfiltration": {
+      "label": "Stealth (low-and-slow) exfiltration",
+      "caught": 2,
+      "total": 3
+     }
+    },
+    "ml_only": {
+     "recall": 0.889,
+     "precision": 1.0,
+     "f1": 0.941,
+     "fp": 0,
+     "auc": 1.0,
+     "average_precision": 1.0
+    },
+    "rules_only": {
+     "recall": 0.833,
+     "precision": 1.0,
+     "f1": 0.909,
+     "fp": 0,
+     "auc": 0.9965,
+     "average_precision": 0.9767
+    },
+    "hybrid": {
+     "recall": 0.944,
+     "precision": 1.0,
+     "f1": 0.971,
+     "fp": 0,
+     "auc": 1.0,
+     "average_precision": 1.0
+    }
+   },
+   {
+    "seed": 707,
+    "test_sessions": 188,
+    "test_attacks": 18,
+    "training_sessions": 319,
+    "per_scenario": {
+     "account_takeover": {
+      "label": "Account takeover",
+      "caught": 3,
+      "total": 3
+     },
+     "insider_exfiltration": {
+      "label": "Insider data exfiltration",
+      "caught": 3,
+      "total": 3
+     },
+     "credential_stuffing": {
+      "label": "Credential stuffing",
+      "caught": 3,
+      "total": 3
+     },
+     "impossible_travel": {
+      "label": "Impossible travel",
+      "caught": 3,
+      "total": 3
+     },
+     "rogue_ai_agent": {
+      "label": "Rogue AI agent / API abuse",
+      "caught": 3,
+      "total": 3
+     },
+     "stealth_exfiltration": {
+      "label": "Stealth (low-and-slow) exfiltration",
+      "caught": 3,
+      "total": 3
+     }
+    },
+    "ml_only": {
+     "recall": 1.0,
+     "precision": 1.0,
+     "f1": 1.0,
+     "fp": 0,
+     "auc": 1.0,
+     "average_precision": 1.0
+    },
+    "rules_only": {
+     "recall": 0.833,
+     "precision": 1.0,
+     "f1": 0.909,
+     "fp": 0,
+     "auc": 0.9961,
+     "average_precision": 0.9757
+    },
+    "hybrid": {
+     "recall": 1.0,
+     "precision": 1.0,
+     "f1": 1.0,
+     "fp": 0,
+     "auc": 1.0,
+     "average_precision": 1.0
+    }
+   },
+   {
+    "seed": 808,
+    "test_sessions": 184,
+    "test_attacks": 18,
+    "training_sessions": 304,
+    "per_scenario": {
+     "account_takeover": {
+      "label": "Account takeover",
+      "caught": 3,
+      "total": 3
+     },
+     "insider_exfiltration": {
+      "label": "Insider data exfiltration",
+      "caught": 3,
+      "total": 3
+     },
+     "credential_stuffing": {
+      "label": "Credential stuffing",
+      "caught": 3,
+      "total": 3
+     },
+     "impossible_travel": {
+      "label": "Impossible travel",
+      "caught": 3,
+      "total": 3
+     },
+     "rogue_ai_agent": {
+      "label": "Rogue AI agent / API abuse",
+      "caught": 3,
+      "total": 3
+     },
+     "stealth_exfiltration": {
+      "label": "Stealth (low-and-slow) exfiltration",
+      "caught": 3,
+      "total": 3
+     }
+    },
+    "ml_only": {
+     "recall": 1.0,
+     "precision": 1.0,
+     "f1": 1.0,
+     "fp": 0,
+     "auc": 1.0,
+     "average_precision": 1.0
+    },
+    "rules_only": {
+     "recall": 0.833,
+     "precision": 1.0,
+     "f1": 0.909,
+     "fp": 0,
+     "auc": 1.0,
+     "average_precision": 1.0
+    },
+    "hybrid": {
+     "recall": 1.0,
+     "precision": 1.0,
+     "f1": 1.0,
+     "fp": 0,
+     "auc": 1.0,
+     "average_precision": 1.0
+    }
+   }
+  ],
+  "summary": {
+   "ml_only": {
+    "recall": {
+     "mean": 0.9723,
+     "std": 0.0481,
+     "min": 0.889,
+     "max": 1.0
+    },
+    "precision": {
+     "mean": 1.0,
+     "std": 0.0,
+     "min": 1.0,
+     "max": 1.0
+    },
+    "f1": {
+     "mean": 0.9852,
+     "std": 0.0255,
+     "min": 0.941,
+     "max": 1.0
+    },
+    "fp": {
+     "mean": 0,
+     "std": 0.0,
+     "min": 0,
+     "max": 0
+    },
+    "auc": {
+     "mean": 1.0,
+     "std": 0.0,
+     "min": 1.0,
+     "max": 1.0
+    },
+    "average_precision": {
+     "mean": 1.0,
+     "std": 0.0,
+     "min": 1.0,
+     "max": 1.0
+    }
+   },
+   "rules_only": {
+    "recall": {
+     "mean": 0.833,
+     "std": 0.0,
+     "min": 0.833,
+     "max": 0.833
+    },
+    "precision": {
+     "mean": 1.0,
+     "std": 0.0,
+     "min": 1.0,
+     "max": 1.0
+    },
+    "f1": {
+     "mean": 0.909,
+     "std": 0.0,
+     "min": 0.909,
+     "max": 0.909
+    },
+    "fp": {
+     "mean": 0,
+     "std": 0.0,
+     "min": 0,
+     "max": 0
+    },
+    "auc": {
+     "mean": 0.9982,
+     "std": 0.0017,
+     "min": 0.996,
+     "max": 1.0
+    },
+    "average_precision": {
+     "mean": 0.9849,
+     "std": 0.0117,
+     "min": 0.9747,
+     "max": 1.0
+    }
+   },
+   "hybrid": {
+    "recall": {
+     "mean": 0.993,
+     "std": 0.0185,
+     "min": 0.944,
+     "max": 1.0
+    },
+    "precision": {
+     "mean": 1.0,
+     "std": 0.0,
+     "min": 1.0,
+     "max": 1.0
+    },
+    "f1": {
+     "mean": 0.9964,
+     "std": 0.0096,
+     "min": 0.971,
+     "max": 1.0
+    },
+    "fp": {
+     "mean": 0,
+     "std": 0.0,
+     "min": 0,
+     "max": 0
+    },
+    "auc": {
+     "mean": 1.0,
+     "std": 0.0,
+     "min": 1.0,
+     "max": 1.0
+    },
+    "average_precision": {
+     "mean": 1.0,
+     "std": 0.0,
+     "min": 1.0,
+     "max": 1.0
+    }
+   }
+  }
+ }
+}
