@@ -94,8 +94,7 @@ export default function LearningLoop({ onModelChange }) {
                   <th className="pb-1">Version</th>
                   <th className="pb-1">When</th>
                   <th className="pb-1 text-right">Labels</th>
-                  <th className="pb-1 text-right">Recall</th>
-                  <th className="pb-1 text-right">False alarms</th>
+                  <th className="pb-1 text-right">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -104,8 +103,7 @@ export default function LearningLoop({ onModelChange }) {
                     <td className="py-1 font-mono">{v.version}</td>
                     <td className="py-1 text-slate-400">{fmtDateTime(v.at)}</td>
                     <td className="py-1 text-right font-mono">{v.feedback_labels}</td>
-                    <td className="py-1 text-right font-mono">{pct(v.recall)}</td>
-                    <td className="py-1 text-right font-mono">{v.fp}</td>
+                    <td className="py-1 text-right">{v.accepted ? "live / passed safety gate" : "rejected by safety gate"}</td>
                   </tr>
                 ))}
               </tbody>

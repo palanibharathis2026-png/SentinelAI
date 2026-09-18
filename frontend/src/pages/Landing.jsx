@@ -6,7 +6,6 @@ import {
 import { api } from "../api.js";
 import { usePolling } from "../hooks/usePolling.js";
 import ThreatMap from "../components/ThreatMap.jsx";
-import { pct } from "../utils/format.js";
 
 const STEPS = [
   { icon: Fingerprint, title: "Learn", text: "Builds a Digital Behavioral Twin of every employee: hours, devices, cities, data habits, systems and admin actions.", color: "from-cyan-500 to-blue-600" },
@@ -25,9 +24,9 @@ const THREATS = [
 ];
 
 export default function Landing() {
-  const { data: model } = usePolling(api.model, 0);
   const { data: map } = usePolling(() => api.map(24 * 7), 8000);
-  const h = model?.hybrid;
+  const { data: evaluation } = usePolling(api.evaluation, 0);
+  const real = Object.values(evaluation?.external || {})[0];
 
   return (
     <div className="space-y-14 pb-10">
@@ -62,10 +61,10 @@ export default function Landing() {
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          { label: "Attacks caught", value: h ? pct(h.recall) : "-", sub: `${h?.tp ?? "-"} of ${model?.test_attacks ?? "-"} in the test set`, c: "from-emerald-500/25 ring-emerald-400/30" },
-          { label: "Alert precision", value: h ? pct(h.precision) : "-", sub: `${h?.fp ?? "-"} false alarms`, c: "from-cyan-500/25 ring-cyan-400/30" },
-          { label: "Rules alone", value: model ? pct(model.rules_only.recall) : "-", sub: "miss the stealth attacks", c: "from-orange-500/25 ring-orange-400/30" },
-          { label: "Threat types", value: "6", sub: "simulated end-to-end", c: "from-fuchsia-500/25 ring-fuchsia-400/30" },
+          { label: "Real insiders caught", value: real ? `${real.per_attacker.caught_at_5pct_alerts} / ${real.per_attacker.attackers}` : "-", sub: "CMU CERT r4.2, flagged at least once (5% alert budget)", c: "from-emerald-500/25 ring-emerald-400/30" },
+          { label: "Ranking quality", value: real ? `AUC ${real.hybrid.auc.toFixed(2)}` : "-", sub: "on real labelled insider data", c: "from-cyan-500/25 ring-cyan-400/30" },
+          { label: "Rules alone", value: real ? `AUC ${real.rules_only.auc.toFixed(2)}` : "-", sub: "hand-written rules barely beat guessing", c: "from-orange-500/25 ring-orange-400/30" },
+          { label: "Real data tested", value: real ? real.sessions.toLocaleString() : "-", sub: "employee-days from 200 real people", c: "from-fuchsia-500/25 ring-fuchsia-400/30" },
         ].map((s) => (
           <div key={s.label} className={`rounded-2xl bg-gradient-to-br to-transparent p-5 ring-1 ${s.c}`}>
             <div className="text-xs tracking-wider text-slate-300 uppercase">{s.label}</div>

@@ -1,17 +1,12 @@
 import { useState } from "react";
-import { BrainCircuit, Loader2, RotateCcw, Target } from "lucide-react";
+import { BrainCircuit, Loader2, RotateCcw } from "lucide-react";
 import { api } from "../api.js";
 import Evaluation from "../components/Evaluation.jsx";
 import LearningLoop from "../components/LearningLoop.jsx";
 import ModelCard from "../components/ModelCard.jsx";
 import { usePolling } from "../hooks/usePolling.js";
-import { TIER_STYLES, pct } from "../utils/format.js";
+import { TIER_STYLES } from "../utils/format.js";
 
-const DETECTORS = [
-  { key: "ml_only", label: "ML only", note: "Isolation Forest + robust distance" },
-  { key: "rules_only", label: "Rules only", note: "Security signals with thresholds" },
-  { key: "hybrid", label: "SentinelAI hybrid", note: "Both, fused as independent evidence" },
-];
 
 const PIPELINE = [
   "User activity",
@@ -48,8 +43,7 @@ export default function Model() {
         <div>
           <h1 className="gradient-text text-3xl font-bold">Model &amp; accuracy</h1>
           <p className="text-sm text-slate-400">
-            Trained on {m.trained_on} normal sessions. Evaluated on the {m.test_sessions} most recent sessions, which contain{" "}
-            {m.test_attacks} planted attacks the model never saw. An alert means risk ≥ {m.alert_threshold}.
+            Accuracy is measured on real, labelled insider-threat data (Carnegie Mellon CERT r4.2), not on our own demo data.
           </p>
         </div>
         <button onClick={reset} className="btn-ghost" disabled={resetting}>
@@ -61,83 +55,7 @@ export default function Model() {
 
       <LearningLoop onModelChange={refresh} />
 
-      <div className="card overflow-x-auto">
-        <div className="card-title">
-          <Target className="h-4 w-4 text-cyan-400" /> Why hybrid? Detector comparison on unseen data
-        </div>
-        <table className="w-full text-sm">
-          <thead className="text-xs tracking-wider text-slate-400 uppercase">
-            <tr>
-              <th className="py-2 text-left">Detector</th>
-              <th className="py-2 text-right">Recall</th>
-              <th className="py-2 text-right">Precision</th>
-              <th className="py-2 text-right">F1</th>
-              <th className="py-2 text-right">False alarm rate</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800">
-            {DETECTORS.map((d) => {
-              const r = m[d.key];
-              const best = d.key === "hybrid";
-              return (
-                <tr key={d.key} className={best ? "text-cyan-200" : ""}>
-                  <td className="py-3">
-                    <div className="font-medium">{d.label}</div>
-                    <div className="text-xs text-slate-500">{d.note}</div>
-                  </td>
-                  <td className="py-3 text-right font-mono">{pct(r.recall)}</td>
-                  <td className="py-3 text-right font-mono">{pct(r.precision)}</td>
-                  <td className="py-3 text-right font-mono">{r.f1.toFixed(2)}</td>
-                  <td className="py-3 text-right font-mono">{pct(r.false_positive_rate)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        <p className="mt-3 text-xs text-slate-500">
-          Recall = share of real attacks caught. Precision = share of alerts that were real attacks. Rules miss attacks
-          that stay under every threshold; ML alone can miss attacks that look normal on average. Fusing both catches more.
-        </p>
-      </div>
-
-      <Evaluation curves={m.curves} />
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="card">
-          <div className="card-title">Detection by attack type (hybrid)</div>
-          <ul className="space-y-3">
-            {Object.entries(m.per_scenario).map(([id, s]) => (
-              <li key={id}>
-                <div className="flex justify-between text-sm">
-                  <span>{s.label}</span>
-                  <span className="font-mono text-slate-300">{s.caught}/{s.total}</span>
-                </div>
-                <div className="mt-1 h-2 rounded-full bg-slate-800">
-                  <div
-                    className="h-2 rounded-full bg-cyan-400"
-                    style={{ width: `${s.total ? (s.caught / s.total) * 100 : 0}%` }}
-                  />
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="card">
-          <div className="card-title">Confusion matrix (hybrid)</div>
-          <div className="grid grid-cols-[auto_1fr_1fr] gap-2 text-center text-sm">
-            <div />
-            <div className="text-xs text-slate-400">Flagged</div>
-            <div className="text-xs text-slate-400">Not flagged</div>
-            <div className="self-center text-right text-xs text-slate-400">Attack</div>
-            <div className="rounded-lg bg-emerald-500/15 p-4 font-mono text-2xl text-emerald-300">{h.tp}</div>
-            <div className="rounded-lg bg-red-500/15 p-4 font-mono text-2xl text-red-300">{h.fn}</div>
-            <div className="self-center text-right text-xs text-slate-400">Normal</div>
-            <div className="rounded-lg bg-orange-500/15 p-4 font-mono text-2xl text-orange-300">{h.fp}</div>
-            <div className="rounded-lg bg-slate-800 p-4 font-mono text-2xl text-slate-300">{h.tn}</div>
-          </div>
-        </div>
-      </div>
+      <Evaluation />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="card">
