@@ -66,6 +66,8 @@ class SentinelEngine:
         self.detector: AnomalyDetector | None = None
         self.twins: dict[str, dict] = {}
         self.metrics: dict = {}
+        # Devices enrolled by passing an email one-time code (staff portal): trusted like known devices.
+        self.enrolled_devices: dict[str, set[str]] = {}
         self.lock = threading.RLock()
 
     # ------------------------------------------------------------------ setup
@@ -178,7 +180,14 @@ class SentinelEngine:
 
     # ---------------------------------------------------------------- scoring
     def twin(self, user_id: str) -> dict:
-        return self.twins.get(user_id) or build_twin([])
+        t = self.twins.get(user_id) or build_twin([])
+        extra = self.enrolled_devices.get(user_id)
+        if extra:
+            t = {**t, "known_devices": t["known_devices"] + sorted(extra - set(t["known_devices"]))}
+        return t
+
+    def enroll_device(self, user_id: str, device: str) -> None:
+        self.enrolled_devices.setdefault(user_id, set()).add(device)
 
     def _score(self, e: dict, prev: dict | None, source: str) -> Event:
         vec, facts = compute_features(e, self.twin(e["user_id"]), prev)

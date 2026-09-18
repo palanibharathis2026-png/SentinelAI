@@ -127,7 +127,13 @@ def compute_features(event: dict, twin: dict, prev: dict | None) -> tuple[np.nda
     api_ratio = (event["api_calls"] + 1) / (twin["avg_api"] + 1)
     sensitive_ratio = (event["sensitive_access"] + 1) / (twin["avg_sensitive"] + 1)
 
-    resources, actions = event.get("resources", []), event.get("actions", [])
+    resources = event.get("resources", [])
+    # Staff-portal markers: "denied:<system>" = tried to open a system without permission,
+    # "new_email:<address>" = code sent to / account switched to an email this person never used.
+    marks = [a for a in event.get("actions", []) if ":" in a]
+    denied = [a.split(":", 1)[1] for a in marks if a.startswith("denied:")]
+    new_email = [a.split(":", 1)[1] for a in marks if a.startswith("new_email:")]
+    actions = [a for a in event.get("actions", []) if ":" not in a]
     new_resources = [r for r in resources if r not in twin["familiar_resources"]]
     new_actions = [a for a in actions if a not in twin["familiar_actions"]]
     tampering = [a for a in actions if a in TAMPERING_ACTIONS]
@@ -187,5 +193,7 @@ def compute_features(event: dict, twin: dict, prev: dict | None) -> tuple[np.nda
         "new_actions": new_actions,
         "tampering": tampering,
         "honeytokens": [r for r in resources if r in HONEYTOKENS],
+        "denied": denied,
+        "new_email": new_email,
     }
     return vector, facts

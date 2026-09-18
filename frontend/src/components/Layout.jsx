@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { Activity, BrainCircuit, FlaskConical, Globe2, Home, LayoutDashboard, LogOut, Radio, ShieldCheck, UserCog, Users } from "lucide-react";
+import { Activity, BrainCircuit, FlaskConical, Globe2, Home, KeyRound, LayoutDashboard, LogOut, Mail, Radio, ShieldCheck, UserCog, Users } from "lucide-react";
 import { api } from "../api.js";
 import { setAuth } from "../auth.js";
 import { usePolling } from "../hooks/usePolling.js";
@@ -11,6 +11,8 @@ const NAV = [
   { to: "/map", label: "Threat Map", icon: Globe2 },
   { to: "/lab", label: "Risk Lab", icon: FlaskConical },
   { to: "/employees", label: "Employees", icon: Users },
+  { to: "/access", label: "Access Control", icon: KeyRound },
+  { to: "/mail", label: "Mail Outbox", icon: Mail },
   { to: "/model", label: "Model & Accuracy", icon: BrainCircuit },
 ];
 

@@ -25,7 +25,13 @@ The front page is a login screen. Nothing is visible until someone signs in.
 
 **SOC admin / owner:** username `TOBY`, password `5429` (change with `ADMIN_USERNAME` / `ADMIN_PASSWORD` in `.env`).
 
-**Staff portal (demo accounts).** A guest signs in as an employee, and the admin dashboard shows them under **Staff online now** with a live risk score. Their real device (from the browser) and wrong-password attempts are scored. Actions such as *Export ALL company data* or *Turn off audit logs* get the account locked in real time.
+**Staff portal (demo accounts).** A guest signs in as an employee with **password + a 6-digit code sent by email**, and the admin dashboard shows them under **Staff online now** with a live risk score. Their real device, their **device location (GPS / mobile network / Wi-Fi, never typed in)** and wrong password/code attempts are scored. Passing the email code enrols the device as trusted.
+
+**Access control.** On the **Access Control** page the admin switches each person's access to each system on or off and sets their email. In the portal, staff get an awareness note before opening something for the first time, and a warning for systems they have no access to. Opening one anyway **locks the account until the admin unlocks it**. Staff can also request access, which the admin approves or denies.
+
+**Email alerts.** The admin is emailed when staff sign in, are denied access, request access or get flagged. Staff get awareness notes and unlock notices. If the sign-in code is sent to, or the account is switched to, an email the person never used, SentinelAI adds an *Unfamiliar email* signal (a common account-takeover move) and warns the usual address. Without SMTP settings, every email is shown in the dashboard's **Mail Outbox** and the code appears on the sign-in screen (demo mode). Add `SMTP_USER` / `SMTP_PASSWORD` (e.g. a Gmail app password) to `.env` for real email.
+
+Actions such as *Export ALL company data*, *Turn off audit logs* or opening a decoy file get the account locked in real time.
 
 | Staff ID | Password | Employee | Role | Office |
 |---|---|---|---|---|
@@ -54,6 +60,10 @@ A locked account can be unblocked from **Employees**. After 5 wrong admin passwo
 
 ![Staff portal](docs/screenshots/staff-portal.png)
 
+![Email code](docs/screenshots/otp.png)
+
+![Access control](docs/screenshots/access-control.png)
+
 > These are demo credentials for a hackathon. For real use, keep the admin password in `.env` and store staff passwords hashed in the database.
 
 ## Features
@@ -64,6 +74,7 @@ A locked account can be unblocked from **Employees**. After 5 wrong admin passwo
 | 🏆 | **Beat-SentinelAI challenge** | Guests try to take data without getting caught; the dashboard counts attempts vs. caught |
 | 🛑 | **Live SOC controls** | Lock an account or force-sign-out a signed-in person straight from *Staff online now* |
 | 🖥️ | **Desktop notifications** | Windows notifications for blocks and logins, even when the dashboard tab is in the background |
+| 📧 | **Email OTP + access control** | Staff sign in with password + emailed code; admin grants per-system access; no-permission attempts lock the account until unlocked; unfamiliar-email detection; Mail Outbox |
 | 🔐 | **Login** | Admin login guards the dashboard; staff portal for live demo logins, shown as *Staff online now* |
 | 🏠 | **Overview page** | The problem, how it works in 4 steps, live accuracy and a mini threat map |
 | 📊 | **SOC dashboard** | Live sessions, risk timeline, open alerts, riskiest employees, department heatmap |

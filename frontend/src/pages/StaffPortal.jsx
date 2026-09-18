@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  AlertTriangle, Briefcase, CheckCircle2, Clock, Database, FileDown, FileSpreadsheet, FolderOpen, Laptop, Loader2,
-  Lock, LogOut, MapPin, PackageOpen, ShieldCheck, ShieldOff, Trophy,
+  AlertTriangle, Briefcase, CheckCircle2, Clock, Database, FileDown, FileSpreadsheet, FolderOpen, Info, KeyRound,
+  Laptop, Loader2, Lock, LogOut, Mail, MapPin, PackageOpen, ShieldCheck, ShieldOff, Trophy, X,
 } from "lucide-react";
 import { api } from "../api.js";
 import { setAuth } from "../auth.js";
@@ -9,15 +9,62 @@ import { fmtTime } from "../utils/format.js";
 
 const CHECK = {
   verified: { icon: CheckCircle2, text: "Session verified: your activity matches your usual behaviour.", cls: "border-emerald-400/40 bg-emerald-500/10 text-emerald-200" },
-  mfa: { icon: AlertTriangle, text: "Security asked for extra verification (MFA) because this session looks unusual.", cls: "border-amber-400/40 bg-amber-500/10 text-amber-200" },
-  locked: { icon: Lock, text: "Account locked by the security team.", cls: "border-red-500/50 bg-red-500/15 text-red-200" },
+  mfa: { icon: AlertTriangle, text: "Security flagged this session as unusual and is watching it closely.", cls: "border-amber-400/40 bg-amber-500/10 text-amber-200" },
 };
+
+// Awareness note shown before opening something new or something outside your permissions.
+function Notice({ notice, onClose, onOpen, onRequest }) {
+  if (!notice) return null;
+  const denied = notice.type === "denied";
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      <div className={`card w-full max-w-md ${denied ? "border-red-500/50" : "border-amber-400/50"}`}>
+        <div className="flex items-start gap-3">
+          <div className={`rounded-full p-2 ${denied ? "bg-red-500/20" : "bg-amber-500/20"}`}>
+            {denied ? <Lock className="h-6 w-6 text-red-300" /> : <Info className="h-6 w-6 text-amber-300" />}
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-bold">{denied ? "You don't have access" : "First time opening this"}</h3>
+            <p className="mt-1 text-sm text-slate-300">
+              {denied ? (
+                <>
+                  Your role has no permission for <b>{notice.system}</b>. Opening it anyway will <b>lock your account</b> until the
+                  security admin unlocks it, and the admin will be emailed.
+                </>
+              ) : (
+                <>
+                  You have never opened <b>{notice.system}</b> before. You are allowed to, but SentinelAI will record it and send
+                  you and the admin a security notice.
+                </>
+              )}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-200"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <button onClick={onClose} className="btn-ghost">Cancel</button>
+          {denied && (
+            <button onClick={onRequest} className="btn-primary" disabled={notice.pending}>
+              <KeyRound className="h-4 w-4" /> {notice.pending ? "Request pending" : "Request access"}
+            </button>
+          )}
+          <button onClick={onOpen} className={denied ? "btn-danger" : "btn-primary"}>
+            {denied ? "Open anyway" : "Continue"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function StaffPortal() {
   const [me, setMe] = useState(null);
   const [busy, setBusy] = useState(null);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [newEmail, setNewEmail] = useState("");
+  const [editEmail, setEditEmail] = useState(false);
 
   const heartbeat = useCallback(async () => {
     try {
@@ -29,7 +76,7 @@ export default function StaffPortal() {
 
   useEffect(() => {
     heartbeat();
-    const id = setInterval(heartbeat, 10000);
+    const id = setInterval(heartbeat, 8000);
     return () => clearInterval(id);
   }, [heartbeat]);
 
@@ -42,12 +89,13 @@ export default function StaffPortal() {
     setAuth(null);
   }
 
-  async function act(kind, system, label) {
-    setBusy(system || kind);
+  async function run(label, fn, done) {
+    setBusy(label);
     setError(null);
     try {
-      setMe(await api.staffActivity(kind, system));
-      setMessage(label);
+      const res = await fn();
+      setMe(res);
+      setMessage(typeof done === "function" ? done(res) : done);
     } catch (e) {
       setError(e.message);
       heartbeat();
@@ -56,23 +104,39 @@ export default function StaffPortal() {
     }
   }
 
+  const act = (kind, system, label) =>
+    run(system || kind, () => api.staffActivity(kind, system), (res) =>
+      res.first_time ? `${label}. Security notice sent to your email (first-time access).` : label);
+
+  function openSystem(system) {
+    if (!me.permissions.includes(system)) {
+      setNotice({ type: "denied", system, pending: me.pending_requests.includes(system) });
+    } else if (!me.familiar.includes(system)) {
+      setNotice({ type: "new", system });
+    } else {
+      act("open", system, `Opened ${system}`);
+    }
+  }
+
   if (!me) return <div className="flex min-h-screen items-center justify-center text-slate-400">{error || "Opening workspace..."}</div>;
 
   const { employee: emp, session, security_check: check } = me;
-  const locked = check === "locked" || emp.status === "blocked";
 
-  if (locked) {
+  if (check === "locked") {
     return (
       <div className="flex min-h-screen items-center justify-center p-4">
         <div className="card max-w-md border-red-500/50 text-center">
           <div className="mx-auto mb-4 w-fit rounded-full bg-red-500/20 p-4">
             <ShieldOff className="h-10 w-10 text-red-400" />
           </div>
-          <h1 className="text-2xl font-bold text-red-200">Account locked</h1>
-          <p className="mt-2 text-slate-300">
-            SentinelAI noticed that this session does not behave like {emp.name.split(" ")[0]} and locked the account.
-            The security team has been alerted.
+          <h1 className="text-2xl font-bold text-red-200">Account temporarily locked</h1>
+          <p className="mt-2 text-slate-300">{emp.status_reason || "SentinelAI noticed unusual behaviour and locked the account."}</p>
+          <p className="mt-2 text-sm text-slate-400">
+            The security admin has been emailed. This page unlocks by itself as soon as they unlock your account.
           </p>
+          <div className="mt-4 flex items-center justify-center gap-2 text-xs text-slate-500">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Waiting for the admin…
+          </div>
           <button onClick={logout} className="btn-ghost mx-auto mt-6">
             <LogOut className="h-4 w-4" /> Sign out
           </button>
@@ -82,10 +146,24 @@ export default function StaffPortal() {
   }
 
   const status = CHECK[check] || CHECK.verified;
-  const others = me.all_systems.filter((s) => !me.usual_systems.includes(s));
 
   return (
     <div className="min-h-screen">
+      <Notice
+        notice={notice}
+        onClose={() => setNotice(null)}
+        onOpen={() => {
+          const n = notice;
+          setNotice(null);
+          act("open", n.system, `Opened ${n.system}`);
+        }}
+        onRequest={() => {
+          const n = notice;
+          setNotice(null);
+          run("request", () => api.staffRequestAccess(n.system), `Access to ${n.system} requested. The admin has been emailed.`);
+        }}
+      />
+
       <header className="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-8">
         <div className="flex items-center gap-2">
           <div className="rounded-lg bg-gradient-to-br from-indigo-500 to-fuchsia-500 p-1.5">
@@ -114,37 +192,87 @@ export default function StaffPortal() {
           <span className="text-sm">{status.text}</span>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-4">
           {[
             [Clock, "Signed in", fmtTime(session.login_at)],
             [MapPin, "Location", `${session.city}, ${session.country}`],
             [Laptop, "Device", session.device],
+            [Mail, "Email", me.email],
           ].map(([Icon, label, value]) => (
             <div key={label} className="card flex items-center gap-3 p-4">
-              <Icon className="h-5 w-5 text-cyan-300" />
+              <Icon className="h-5 w-5 shrink-0 text-cyan-300" />
               <div className="min-w-0">
                 <div className="text-xs text-slate-400">{label}</div>
-                <div className="truncate text-sm font-medium">{value}</div>
+                <div className="truncate text-sm font-medium" title={value}>{value}</div>
               </div>
             </div>
           ))}
         </div>
 
+        {(message || error || busy) && (
+          <div className={`rounded-lg px-3 py-2 text-sm ${error ? "bg-red-500/10 text-red-200" : "bg-white/5 text-slate-200"}`}>
+            {busy ? <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Working...</span> : error || `✓ ${message}`}
+          </div>
+        )}
+
         <div className="card">
-          <div className="card-title"><ShieldCheck className="h-4 w-4 text-emerald-400" /> Your everyday work</div>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="card-title"><Database className="h-4 w-4 text-cyan-300" /> Company systems</div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {me.all_systems.map((s) => {
+              const allowed = me.permissions.includes(s);
+              const familiar = me.familiar.includes(s);
+              const pending = me.pending_requests.includes(s);
+              return (
+                <button
+                  key={s}
+                  onClick={() => openSystem(s)}
+                  disabled={!!busy}
+                  className={`flex items-center gap-3 rounded-xl border p-3 text-left transition disabled:opacity-50 ${
+                    allowed ? "border-cyan-400/30 bg-cyan-500/10 hover:bg-cyan-500/20" : "border-white/10 bg-slate-950/40 hover:border-red-400/40"
+                  }`}
+                >
+                  {allowed ? <Database className="h-5 w-5 shrink-0 text-cyan-300" /> : <Lock className="h-5 w-5 shrink-0 text-slate-500" />}
+                  <div className="min-w-0">
+                    <div className={`truncate font-medium ${allowed ? "" : "text-slate-400"}`}>{s}</div>
+                    <div className="text-xs text-slate-500">
+                      {!allowed ? (pending ? "Access requested" : "No access") : familiar ? "You use this" : "Allowed · never opened"}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-title"><ShieldCheck className="h-4 w-4 text-emerald-400" /> Everyday work</div>
+          <div className="grid gap-3 sm:grid-cols-3">
             <button onClick={() => act("work", null, "Downloaded today's work files")} disabled={!!busy} className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-left hover:bg-emerald-500/20 disabled:opacity-50">
               <FileDown className="mb-2 h-5 w-5 text-emerald-300" />
               <div className="font-semibold">Download today&apos;s files</div>
               <div className="text-xs text-slate-400">Normal work. Should stay green.</div>
             </button>
-            {me.usual_systems.map((s) => (
-              <button key={s} onClick={() => act("open", s, `Opened ${s}`)} disabled={!!busy} className="rounded-xl border border-cyan-400/30 bg-cyan-500/10 p-4 text-left hover:bg-cyan-500/20 disabled:opacity-50">
-                <Database className="mb-2 h-5 w-5 text-cyan-300" />
-                <div className="font-semibold">Open {s}</div>
-                <div className="text-xs text-slate-400">A system you use every day</div>
-              </button>
-            ))}
+            <div className="rounded-xl border border-white/10 bg-slate-950/40 p-4 sm:col-span-2">
+              <div className="flex items-center gap-2 font-semibold"><Mail className="h-4 w-4 text-cyan-300" /> My email</div>
+              {editEmail ? (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    setEditEmail(false);
+                    run("email", () => api.staffChangeEmail(newEmail), `Email changed to ${newEmail}`);
+                  }}
+                  className="mt-2 flex gap-2"
+                >
+                  <input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="new@example.com" className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-950 px-3 py-1.5 text-sm" />
+                  <button className="btn-primary text-xs" disabled={!newEmail}>Save</button>
+                </form>
+              ) : (
+                <div className="mt-1 flex items-center justify-between gap-2 text-sm text-slate-400">
+                  <span className="truncate">Codes and security notices go to {me.email}</span>
+                  <button onClick={() => setEditEmail(true)} className="shrink-0 text-cyan-300 hover:underline">Change</button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -163,20 +291,12 @@ export default function StaffPortal() {
         <div className="rounded-2xl border border-fuchsia-400/30 bg-gradient-to-r from-fuchsia-500/10 to-indigo-500/10 p-4 text-sm">
           <div className="flex items-center gap-2 font-semibold text-fuchsia-200"><Trophy className="h-4 w-4" /> Challenge: can you beat SentinelAI?</div>
           <p className="mt-1 text-slate-300">
-            Try to take as much data as you can without getting caught. Downloading slowly might work… or might not.
-            Files taken so far: <b>{session.files_downloaded}</b>
+            Try to take as much data as you can without getting caught. Files taken so far: <b>{session.files_downloaded}</b>
           </p>
         </div>
 
         <div className="card border-rose-500/30">
           <div className="card-title"><AlertTriangle className="h-4 w-4 text-rose-400" /> Try something suspicious (demo)</div>
-          <div className="mb-3 flex flex-wrap gap-2">
-            {others.map((s) => (
-              <button key={s} onClick={() => act("open", s, `Opened ${s}`)} disabled={!!busy} className="rounded-full border border-orange-400/40 bg-orange-500/10 px-3 py-1 text-xs text-orange-200 hover:bg-orange-500/20 disabled:opacity-50">
-                {busy === s ? "..." : `Open ${s}`}
-              </button>
-            ))}
-          </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <button onClick={() => act("extra", null, "Downloaded an extra batch")} disabled={!!busy} className="rounded-xl border border-orange-400/40 bg-orange-500/10 p-4 text-left hover:bg-orange-500/20 disabled:opacity-50">
               <FileDown className="mb-2 h-5 w-5 text-orange-300" />
@@ -195,10 +315,6 @@ export default function StaffPortal() {
             </button>
           </div>
         </div>
-
-        {busy && <div className="flex items-center gap-2 text-sm text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Working...</div>}
-        {message && !busy && <div className="text-sm text-slate-300">✓ {message}. Files downloaded this session: {session.files_downloaded}</div>}
-        {error && <div className="text-sm text-red-300">{error}</div>}
       </main>
     </div>
   );

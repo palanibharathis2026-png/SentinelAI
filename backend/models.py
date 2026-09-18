@@ -60,3 +60,48 @@ class Event(Base):
     status: Mapped[str] = mapped_column(String(16), default="open")  # open | resolved | false_positive
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     explanation_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
+
+class StaffAccess(Base):
+    """Staff portal settings the admin controls: contact email and which systems a person may open."""
+
+    __tablename__ = "staff_access"
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("employees.id"), primary_key=True)
+    email: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    permissions: Mapped[list] = mapped_column(JSON, default=list)
+    known_emails: Mapped[list] = mapped_column(JSON, default=list)  # addresses this person has really used
+    known_devices: Mapped[list] = mapped_column(JSON, default=list)  # devices enrolled by passing the email code
+
+
+class AccessRequest(Base):
+    __tablename__ = "access_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("employees.id"), index=True)
+    resource: Mapped[str] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending | approved | denied
+
+
+class MailMessage(Base):
+    """Every email SentinelAI sends (or would send, when SMTP is not configured)."""
+
+    __tablename__ = "mail_outbox"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    to: Mapped[str] = mapped_column(String(120))
+    subject: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(String(24))  # otp | login | first_access | denied | request | alert
+    user_id: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    delivery: Mapped[str] = mapped_column(String(16), default="demo")  # sent | demo | failed
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class Setting(Base):
+    __tablename__ = "settings"
+
+    key: Mapped[str] = mapped_column(String(40), primary_key=True)
+    value: Mapped[str | None] = mapped_column(Text, nullable=True)

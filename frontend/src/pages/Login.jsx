@@ -1,19 +1,33 @@
 import { useState } from "react";
-import { Briefcase, Eye, EyeOff, Fingerprint, Loader2, LogIn, MapPin, ShieldCheck, UserCog } from "lucide-react";
+import {
+  ArrowLeft, Briefcase, Eye, EyeOff, Fingerprint, Inbox, Loader2, LogIn, Mail, MapPin, ShieldCheck, UserCog,
+} from "lucide-react";
 import { api } from "../api.js";
 import { setAuth } from "../auth.js";
 
-// Demo only: lets a guest pretend to log in from somewhere else and watch SentinelAI react.
-const DEMO_CITIES = ["Mumbai", "Delhi", "Kolkata", "Singapore", "Frankfurt", "Moscow", "Ashburn", "Lagos", "Sao Paulo"];
+// The device's own location (GPS / mobile network / Wi-Fi). Browsers only allow this on https or localhost.
+function deviceLocation() {
+  return new Promise((resolve) => {
+    if (!("geolocation" in navigator) || !window.isSecureContext) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 },
+    );
+  });
+}
 
 export default function Login() {
   const [mode, setMode] = useState("admin");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [city, setCity] = useState("");
+  const [otherEmail, setOtherEmail] = useState(false);
+  const [email, setEmail] = useState("");
   const [show, setShow] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
+  const [otp, setOtp] = useState(null); // pending email verification
+  const [code, setCode] = useState("");
   const [flash] = useState(() => {
     try {
       const msg = sessionStorage.getItem("sentinel-flash");
@@ -29,19 +43,50 @@ export default function Login() {
     setError(null);
     setUsername("");
     setPassword("");
+    setOtp(null);
+  }
+
+  function finish(res) {
+    setAuth({ token: res.token, role: res.role, name: res.name });
   }
 
   async function submit(e) {
     e.preventDefault();
-    setBusy(true);
     setError(null);
     try {
-      const res = mode === "admin" ? await api.login(username, password) : await api.staffLogin(username, password, city);
-      setAuth({ token: res.token, role: res.role, name: res.name });
+      if (mode === "admin") {
+        setBusy("Signing in...");
+        finish(await api.login(username, password));
+        return;
+      }
+      setBusy("Getting your location...");
+      const where = await deviceLocation();
+      setBusy("Checking password...");
+      const res = await api.staffLogin(username, password, { ...(where || {}), email: otherEmail && email ? email : null });
+      if (res.otp_required) {
+        setOtp(res);
+        setCode("");
+      } else {
+        finish(res);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
-      setBusy(false);
+      setBusy(null);
+    }
+  }
+
+  async function verify(e) {
+    e.preventDefault();
+    setError(null);
+    setBusy("Verifying code...");
+    try {
+      finish(await api.staffOtp(otp.challenge_id, code));
+    } catch (err) {
+      setError(err.message);
+      if (/expired|Too many/.test(err.message)) setOtp(null);
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -73,7 +118,7 @@ export default function Login() {
           <div className="mt-8 grid max-w-lg grid-cols-3 gap-3 text-center text-sm">
             {[
               ["🧬", "Digital twin"],
-              ["🤖", "ML + rules"],
+              ["📧", "Email OTP"],
               ["🚨", "Auto-block"],
             ].map(([emoji, label]) => (
               <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-3">
@@ -94,92 +139,144 @@ export default function Login() {
           </div>
 
           <div className="card glow-border border p-7">
-            <div className="mb-6 grid grid-cols-2 gap-1 rounded-xl bg-slate-950/70 p-1">
-              {[
-                ["admin", UserCog, "SOC Admin"],
-                ["staff", Briefcase, "Staff portal"],
-              ].map(([m, Icon, label]) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => switchMode(m)}
-                  className={`flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium transition ${
-                    mode === m ? "bg-gradient-to-r from-cyan-500/30 to-fuchsia-500/30 text-white" : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  <Icon className="h-4 w-4" /> {label}
+            {otp ? (
+              <>
+                <button type="button" onClick={() => setOtp(null)} className="mb-4 flex items-center gap-1 text-sm text-slate-400 hover:text-slate-200">
+                  <ArrowLeft className="h-4 w-4" /> Back
                 </button>
-              ))}
-            </div>
-
-            <h2 className="text-2xl font-bold">{staff ? "Employee sign in" : "Security team sign in"}</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              {staff
-                ? "Sign in to the company workspace. Your session is checked against your behavioural twin."
-                : "Owner / admin access to the SentinelAI Security Operations Center."}
-            </p>
-
-            {flash && (
-              <div className="mt-4 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">{flash}</div>
-            )}
-
-            <form onSubmit={submit} className="mt-6 space-y-4">
-              <label className="block text-sm text-slate-300">
-                {staff ? "Staff ID" : "Username"}
-                <input
-                  autoFocus
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  autoComplete="username"
-                  placeholder={staff ? "e.g. rahul" : "Admin username"}
-                  className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 outline-none focus:border-cyan-400"
-                />
-              </label>
-              <label className="block text-sm text-slate-300">
-                Password
-                <div className="relative mt-1">
-                  <input
-                    type={show ? "text" : "password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    autoComplete="current-password"
-                    placeholder="••••"
-                    className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 pr-10 outline-none focus:border-cyan-400"
-                  />
-                  <button type="button" onClick={() => setShow(!show)} className="absolute top-2.5 right-3 text-slate-500 hover:text-slate-200">
-                    {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
+                <div className="mb-3 w-fit rounded-xl bg-gradient-to-br from-cyan-500 to-indigo-600 p-2.5">
+                  <Mail className="h-6 w-6 text-white" />
                 </div>
-              </label>
+                <h2 className="text-2xl font-bold">Check your email</h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  We sent a 6-digit sign-in code to <span className="font-medium text-slate-200">{otp.sent_to}</span>. It expires in 5 minutes.
+                </p>
+                {otp.demo_code && (
+                  <div className="mt-4 rounded-xl border border-amber-400/40 bg-amber-500/10 p-3 text-sm">
+                    <div className="flex items-center gap-1.5 font-semibold text-amber-200">
+                      <Inbox className="h-4 w-4" /> Demo inbox
+                    </div>
+                    <div className="mt-1 text-slate-300">
+                      Email sending is not set up for this address, so the message is shown here. Your code is{" "}
+                      <span className="font-mono text-lg font-bold tracking-widest text-white">{otp.demo_code}</span>
+                    </div>
+                  </div>
+                )}
+                <form onSubmit={verify} className="mt-5 space-y-4">
+                  <input
+                    autoFocus
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                    placeholder="000000"
+                    className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-3 text-center font-mono text-3xl tracking-[0.5em] outline-none focus:border-cyan-400"
+                  />
+                  {error && <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</div>}
+                  <button type="submit" disabled={!!busy || code.length !== 6} className="btn-primary w-full justify-center py-3 text-base">
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                    {busy || "Verify and sign in"}
+                  </button>
+                </form>
+              </>
+            ) : (
+              <>
+                <div className="mb-6 grid grid-cols-2 gap-1 rounded-xl bg-slate-950/70 p-1">
+                  {[
+                    ["admin", UserCog, "SOC Admin"],
+                    ["staff", Briefcase, "Staff portal"],
+                  ].map(([m, Icon, label]) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => switchMode(m)}
+                      className={`flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium transition ${
+                        mode === m ? "bg-gradient-to-r from-cyan-500/30 to-fuchsia-500/30 text-white" : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      <Icon className="h-4 w-4" /> {label}
+                    </button>
+                  ))}
+                </div>
 
-              {staff && (
-                <label className="block text-sm text-slate-300">
-                  <span className="flex items-center gap-1.5">
-                    <MapPin className="h-3.5 w-3.5 text-fuchsia-300" /> Login location <span className="text-xs text-slate-500">(demo)</span>
-                  </span>
-                  <select
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5"
-                  >
-                    <option value="">My usual office</option>
-                    {DEMO_CITIES.map((c) => (
-                      <option key={c} value={c}>Pretend I am in {c}</option>
-                    ))}
-                  </select>
-                </label>
-              )}
+                <h2 className="text-2xl font-bold">{staff ? "Employee sign in" : "Security team sign in"}</h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  {staff
+                    ? "Password, then a one-time code by email. Your session is checked against your behavioural twin."
+                    : "Owner / admin access to the SentinelAI Security Operations Center."}
+                </p>
 
-              {error && <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</div>}
+                {flash && (
+                  <div className="mt-4 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">{flash}</div>
+                )}
 
-              <button type="submit" disabled={busy || !username || !password} className="btn-primary w-full justify-center py-3 text-base">
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : staff ? <Fingerprint className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
-                {staff ? "Sign in to workspace" : "Sign in to SOC"}
-              </button>
-            </form>
+                <form onSubmit={submit} className="mt-6 space-y-4">
+                  <label className="block text-sm text-slate-300">
+                    {staff ? "Staff ID" : "Username"}
+                    <input
+                      autoFocus
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      autoComplete="username"
+                      placeholder={staff ? "e.g. rahul" : "Admin username"}
+                      className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 outline-none focus:border-cyan-400"
+                    />
+                  </label>
+                  <label className="block text-sm text-slate-300">
+                    Password
+                    <div className="relative mt-1">
+                      <input
+                        type={show ? "text" : "password"}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        autoComplete="current-password"
+                        placeholder="••••"
+                        className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 pr-10 outline-none focus:border-cyan-400"
+                      />
+                      <button type="button" onClick={() => setShow(!show)} className="absolute top-2.5 right-3 text-slate-500 hover:text-slate-200">
+                        {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </label>
+
+                  {staff && (
+                    <div className="text-sm">
+                      {otherEmail ? (
+                        <label className="block text-slate-300">
+                          Send my code to
+                          <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="you@example.com"
+                            className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 outline-none focus:border-cyan-400"
+                          />
+                          <span className="mt-1 block text-xs text-slate-500">A new email is checked against your usual address.</span>
+                        </label>
+                      ) : (
+                        <button type="button" onClick={() => setOtherEmail(true)} className="text-cyan-300 hover:underline">
+                          Send the code to a different email
+                        </button>
+                      )}
+                      <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
+                        <MapPin className="h-3.5 w-3.5" /> Your location is taken from this device (allow it when asked).
+                      </div>
+                    </div>
+                  )}
+
+                  {error && <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</div>}
+
+                  <button type="submit" disabled={!!busy || !username || !password} className="btn-primary w-full justify-center py-3 text-base">
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : staff ? <Fingerprint className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
+                    {busy || (staff ? "Continue" : "Sign in to SOC")}
+                  </button>
+                </form>
+              </>
+            )}
           </div>
           <p className="mt-4 text-center text-xs text-slate-500">
-            {staff ? "Wrong passwords are counted: too many look like a brute-force attack." : "Only the owner / security admin can open the dashboard."}
+            {staff ? "Wrong passwords and codes are counted: too many look like a brute-force attack." : "Only the owner / security admin can open the dashboard."}
           </p>
         </div>
       </section>

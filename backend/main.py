@@ -7,8 +7,6 @@ import asyncio  # noqa: E402
 import logging  # noqa: E402
 import os  # noqa: E402
 import socket  # noqa: E402
-import threading  # noqa: E402
-import time  # noqa: E402
 from contextlib import asynccontextmanager  # noqa: E402
 from datetime import timedelta  # noqa: E402
 
@@ -21,15 +19,20 @@ from sqlalchemy.orm import Session  # noqa: E402
 
 import analyst  # noqa: E402
 import auth  # noqa: E402
+import portal  # noqa: E402
 import simulator  # noqa: E402
 from database import SessionLocal, get_db, init_db  # noqa: E402
+from common import ALERT_TIERS, employee_out, event_out  # noqa: E402
+from common import get_employee as _get_employee  # noqa: E402
+from common import get_event as _get_event  # noqa: E402
+from common import latest_time as _latest_time  # noqa: E402
+from common import names as _names  # noqa: E402
 from detection_service import sentinel  # noqa: E402
 from models import Employee, Event  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("sentinel.api")
 
-ALERT_TIERS = ("MFA", "BLOCK")
 live = {
     "enabled": os.getenv("LIVE_TRAFFIC", "true").lower() == "true",
     "interval": float(os.getenv("LIVE_INTERVAL_SECONDS", "8")),
@@ -64,7 +67,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="SentinelAI", version="1.0.0", lifespan=lifespan)
 
 # Everything under /api needs a login except these. Staff tokens may only use their own portal endpoints.
-OPEN_PATHS = {"/api/health", "/api/auth/login", "/api/auth/staff-login"}
+OPEN_PATHS = {"/api/health", "/api/auth/login", "/api/auth/staff-login", "/api/auth/staff-otp"}
 
 
 @app.middleware("http")
@@ -91,51 +94,6 @@ app.add_middleware(
 )
 
 
-# ------------------------------------------------------------------ serializers
-def employee_out(e: Employee) -> dict:
-    return {"id": e.id, "name": e.name, "department": e.department, "role": e.role,
-            "home_city": e.home_city, "status": e.status, "status_reason": e.status_reason,
-            "status_changed_at": e.status_changed_at}
-
-
-def event_out(e: Event, names: dict[str, str]) -> dict:
-    return {
-        "id": e.id, "user_id": e.user_id, "name": names.get(e.user_id, e.user_id),
-        "timestamp": e.timestamp, "city": e.city, "country": e.country, "ip": e.ip,
-        "device": f"{e.os} / {e.browser}", "failed_attempts": e.failed_attempts,
-        "files_downloaded": e.files_downloaded, "mb_downloaded": e.mb_downloaded,
-        "api_calls": e.api_calls, "sensitive_access": e.sensitive_access,
-        "session_minutes": e.session_minutes, "source": e.source,
-        "resources": e.resources or [], "actions": e.actions or [], "lat": e.lat, "lon": e.lon,
-        "ml_score": e.ml_score, "rule_score": e.rule_score, "risk": e.risk, "tier": e.tier,
-        "action": e.action, "threat": e.threat, "reasons": e.reasons, "status": e.status,
-        "simulated_scenario": simulator.SCENARIOS[e.scenario]["label"] if e.source == "simulated" and e.scenario else None,
-    }
-
-
-def _names(db: Session) -> dict[str, str]:
-    return dict(db.execute(select(Employee.id, Employee.name)).all())
-
-
-def _latest_time(db: Session):
-    return db.scalar(select(func.max(Event.timestamp))) or simulator.now_ist()
-
-
-def _get_event(db: Session, event_id: int) -> Event:
-    event = db.get(Event, event_id)
-    if not event:
-        raise HTTPException(404, "Event not found")
-    return event
-
-
-def _get_employee(db: Session, user_id: str) -> Employee:
-    emp = db.get(Employee, user_id)
-    if not emp:
-        raise HTTPException(404, "Employee not found")
-    return emp
-
-
-# ------------------------------------------------------------------ endpoints
 def _lan_ip() -> str | None:
     """This machine's address on the local network, so guests on the same Wi-Fi can open the staff portal."""
     try:
@@ -327,238 +285,7 @@ def simulate(body: SimulateRequest, db: Session = Depends(get_db)):
     return [event_out(e, names) for e in events]
 
 
-# ------------------------------------------------------------------ login
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-
-# Slow down password guessing on the admin login (matters when the demo is shared by a public link).
-admin_failures: list[float] = []
-ADMIN_MAX_FAILURES, ADMIN_LOCK_SECONDS = 5, 120
-
-
-@app.post("/api/auth/login")
-def admin_login(body: LoginRequest):
-    now = time.time()
-    admin_failures[:] = [t for t in admin_failures if now - t < ADMIN_LOCK_SECONDS]
-    if len(admin_failures) >= ADMIN_MAX_FAILURES:
-        wait = int(ADMIN_LOCK_SECONDS - (now - admin_failures[0])) + 1
-        raise HTTPException(429, f"Too many wrong attempts. Admin login is paused for {wait} seconds.")
-    if not auth.check_admin(body.username, body.password):
-        admin_failures.append(now)
-        raise HTTPException(401, "Wrong username or password")
-    admin_failures.clear()
-    name = auth.ADMIN_USERNAME
-    return {"token": auth.issue("admin", name, name), "role": "admin", "name": name}
-
-
-# ------------------------------------------------------------------ staff portal
-# Wrong passwords per staff username since their last successful login (feeds the brute-force signal).
-failed_logins: dict[str, int] = {}
-# user_id -> who is signed in to the staff portal right now
-presence: dict[str, dict] = {}
-presence_lock = threading.Lock()
-ONLINE_SECONDS = 45
-# Portal sessions the SOC has force-signed-out; their tokens stop working.
-revoked_sessions: set[int] = set()
-
-
-class StaffLoginRequest(LoginRequest):
-    city: str | None = None  # demo option: pretend to log in from another city
-
-
-@app.post("/api/auth/staff-login")
-def staff_login(body: StaffLoginRequest, request: Request, db: Session = Depends(get_db)):
-    username = body.username.strip().lower()
-    account = auth.staff_account(username)
-    if not account or account[0] != body.password:
-        if account:
-            failed_logins[username] = failed_logins.get(username, 0) + 1
-        raise HTTPException(401, "Wrong staff ID or password")
-    user_id = account[1]
-    emp = _get_employee(db, user_id)
-    if emp.status == "blocked":
-        raise HTTPException(403, "This account is locked by the security team. Contact your SOC.")
-    p = simulator.PROFILES[user_id]
-    city = body.city if body.city in simulator.LOCATIONS else p["home_city"]
-    country, lat, lon = simulator.LOCATIONS[city]
-    os_name, browser = auth.device_from_user_agent(request.headers.get("user-agent", ""))
-    ip = request.client.host if request.client else "0.0.0.0"
-    event = {
-        "user_id": user_id, "timestamp": simulator.now_ist(), "city": city, "country": country,
-        "lat": lat, "lon": lon, "ip": ip, "os": os_name, "browser": browser,
-        "failed_attempts": failed_logins.pop(username, 0), "files_downloaded": 0, "mb_downloaded": 0.0,
-        "api_calls": 5, "sensitive_access": 0, "session_minutes": 1, "resources": [], "actions": [],
-        "scenario": None,
-    }
-    row = sentinel.ingest(db, event, "portal")
-    with presence_lock:
-        presence[user_id] = {"event_id": row.id, "login_at": row.timestamp, "last_seen": time.time()}
-    token = auth.issue("staff", user_id, emp.name, event_id=row.id)
-    return {"token": token, "role": "staff", "name": emp.name, **_staff_view(db, user_id, row.id)}
-
-
-def _staff_view(db: Session, user_id: str, event_id: int) -> dict:
-    """What a staff member sees about their own session: no scores, just the outcome."""
-    emp = _get_employee(db, user_id)
-    row = _get_event(db, event_id)
-    p = simulator.PROFILES[user_id]
-    check = ("locked" if emp.status == "blocked" or row.tier == "BLOCK"
-             else "mfa" if row.tier == "MFA" else "verified")
-    return {
-        "employee": {"id": emp.id, "name": emp.name, "role": emp.role, "department": emp.department,
-                     "home_city": emp.home_city, "status": emp.status},
-        "session": {"id": row.id, "login_at": row.timestamp, "city": row.city, "country": row.country,
-                    "device": f"{row.os} / {row.browser}", "files_downloaded": row.files_downloaded,
-                    "resources": row.resources or [], "actions": row.actions or []},
-        "security_check": check,
-        "usual_systems": p["resources"],
-        "shared_files": simulator.HONEYTOKENS,
-        "all_systems": sorted(set(simulator.HIGH_VALUE) | {r for rs in simulator.ROLE_RESOURCES.values() for r in rs}),
-    }
-
-
-def _staff_claims(request: Request) -> dict:
-    claims = request.state.user
-    if claims.get("event_id") in revoked_sessions:
-        raise HTTPException(401, "You were signed out by the security team.")
-    return claims
-
-
-@app.get("/api/staff/me")
-def staff_me(request: Request, db: Session = Depends(get_db)):
-    c = _staff_claims(request)
-    if c["role"] != "staff":
-        raise HTTPException(403, "Staff only")
-    return _staff_view(db, c["sub"], c["event_id"])
-
-
-@app.post("/api/staff/me/heartbeat")
-def staff_heartbeat(request: Request, db: Session = Depends(get_db)):
-    c = _staff_claims(request)
-    if c["role"] != "staff":
-        raise HTTPException(403, "Staff only")
-    with presence_lock:
-        entry = presence.setdefault(c["sub"], {"event_id": c["event_id"], "login_at": simulator.now_ist()})
-        entry["last_seen"] = time.time()
-    row = _get_event(db, c["event_id"])
-    row.session_minutes = max(1, int((simulator.now_ist() - row.timestamp).total_seconds() // 60))
-    db.commit()
-    return _staff_view(db, c["sub"], c["event_id"])
-
-
-class StaffActivity(BaseModel):
-    kind: str  # work | open | export | disable_audit_logs
-    system: str | None = None
-
-
-@app.post("/api/staff/me/activity")
-def staff_activity(body: StaffActivity, request: Request, db: Session = Depends(get_db)):
-    """Record real work done in the portal, then re-score the whole session."""
-    c = _staff_claims(request)
-    if c["role"] != "staff":
-        raise HTTPException(403, "Staff only")
-    emp = _get_employee(db, c["sub"])
-    if emp.status == "blocked":
-        raise HTTPException(403, "This account is locked by the security team.")
-    p = simulator.PROFILES[c["sub"]]
-    row = _get_event(db, c["event_id"])
-    resources, actions = set(row.resources or []), set(row.actions or [])
-    if body.kind == "work":
-        files = max(3, p["files"] // 2)
-        row.files_downloaded += files
-        row.mb_downloaded = round(row.mb_downloaded + files * p["mb_per_file"], 1)
-        row.api_calls += max(5, p["api"] // 3)
-        resources.update(p["resources"][:2])
-    elif body.kind == "extra":
-        files = p["files"] * 3
-        row.files_downloaded += files
-        row.mb_downloaded = round(row.mb_downloaded + files * p["mb_per_file"], 1)
-        row.sensitive_access += max(1, files // 10)
-        row.api_calls += p["api"] // 2
-    elif body.kind == "open":
-        if not body.system:
-            raise HTTPException(400, "Choose a system to open")
-        resources.add(body.system)
-        row.sensitive_access += 2
-        row.api_calls += 15
-    elif body.kind == "export":
-        files = p["files"] * 30
-        row.files_downloaded += files
-        row.mb_downloaded = round(row.mb_downloaded + files * p["mb_per_file"] * 1.2, 1)
-        row.sensitive_access += int(files * 0.6)
-        row.api_calls += p["api"]
-        actions.add("bulk_export")
-    elif body.kind == "disable_audit_logs":
-        actions.add("disable_audit_logs")
-    else:
-        raise HTTPException(400, "Unknown activity")
-    row.resources, row.actions = sorted(resources), sorted(actions)
-    row.session_minutes = max(1, int((simulator.now_ist() - row.timestamp).total_seconds() // 60))
-    sentinel.rescore(db, row)
-    return _staff_view(db, c["sub"], c["event_id"])
-
-
-@app.post("/api/staff/me/logout")
-def staff_logout(request: Request):
-    with presence_lock:
-        presence.pop(_staff_claims(request)["sub"], None)
-    return {"status": "logged out"}
-
-
-@app.post("/api/staff/{user_id}/signout")
-def force_signout(user_id: str):
-    """SOC action: end someone's portal session right now."""
-    with presence_lock:
-        entry = presence.pop(user_id, None)
-    if not entry:
-        raise HTTPException(404, "That person is not signed in")
-    revoked_sessions.add(entry["event_id"])
-    return {"status": "signed out", "user_id": user_id}
-
-
-@app.get("/api/staff/challenge")
-def challenge(db: Session = Depends(get_db)):
-    """'Steal data without getting caught' scoreboard for guests who tried the staff portal (last 24 h)."""
-    since = _latest_time(db) - timedelta(hours=24)
-    rows = db.scalars(select(Event).where(Event.source == "portal", Event.timestamp >= since)
-                      .order_by(Event.timestamp.desc())).all()
-    names = _names(db)
-    attempts = [{
-        "event_id": e.id, "name": names.get(e.user_id, e.user_id), "timestamp": e.timestamp,
-        "mb": e.mb_downloaded, "files": e.files_downloaded, "risk": e.risk, "tier": e.tier,
-        "caught": e.tier in ALERT_TIERS, "threat": e.threat,
-    } for e in rows]
-    tried = [a for a in attempts if a["files"] > 0 or a["caught"]]
-    return {
-        "attempts": len(tried),
-        "caught": sum(a["caught"] for a in tried),
-        "best_undetected": sorted([a for a in tried if not a["caught"]], key=lambda a: -a["mb"])[:5],
-        "recent": tried[:8],
-    }
-
-
-@app.get("/api/staff/active")
-def staff_active(db: Session = Depends(get_db)):
-    """Staff signed in to the portal right now, with their live session verdict (admin view)."""
-    now = time.time()
-    with presence_lock:
-        for uid in [u for u, v in presence.items() if now - v["last_seen"] > ONLINE_SECONDS]:
-            presence.pop(uid)
-        current = dict(presence)
-    names = _names(db)
-    out = []
-    for uid, v in current.items():
-        row = db.get(Event, v["event_id"])
-        emp = db.get(Employee, uid)
-        if not row or not emp:
-            continue
-        out.append(event_out(row, names) | {
-            "event_id": row.id, "login_at": v["login_at"], "seconds_since_seen": round(now - v["last_seen"]),
-            "role": emp.role, "account_status": emp.status,
-        })
-    return sorted(out, key=lambda x: x["login_at"], reverse=True)
+app.include_router(portal.router)
 
 
 # ------------------------------------------------------------------ risk lab

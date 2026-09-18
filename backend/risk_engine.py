@@ -69,6 +69,12 @@ def _signals(f: dict) -> list[dict]:
     if f["sensitive"] >= 5 and f["sensitive_ratio"] >= 4:
         add("Sensitive data access", 20,
             f"{f['sensitive']} sensitive resources accessed (normally ~{f['avg_sensitive']:.0f})")
+    if f.get("denied"):
+        add("Unauthorised access attempt", 40,
+            f"Tried to open {', '.join(f['denied'])} without permission; account locked until an admin unlocks it")
+    if f.get("new_email"):
+        add("Unfamiliar email", 30,
+            f"Sign-in code or account email switched to {', '.join(f['new_email'])}, not this person's usual address")
     if f.get("honeytokens"):
         add("Decoy file opened", 60,
             f"Opened {', '.join(f['honeytokens'])}: a planted trap file that no real employee needs")
@@ -97,6 +103,10 @@ def likely_threat(f: dict, signals: list[dict]) -> str | None:
         return None
     if "Brute-force pattern" in names:
         return "Credential stuffing / brute force"
+    if "Unauthorised access attempt" in names:
+        return "Access outside granted permissions"
+    if "Unfamiliar email" in names:
+        return "Account takeover (email redirected)"
     if "Decoy file opened" in names:
         return "Data snooping (decoy file triggered)"
     if "Machine-speed API usage" in names or "Automation client" in names:
