@@ -61,6 +61,11 @@ export default function Layout({ user, children }) {
             <Activity className={`h-3.5 w-3.5 ${health ? "text-emerald-400" : "text-red-400"}`} />
             API {health ? "online" : "offline"}
           </div>
+          {health?.mode === "cert" && (
+            <div className="rounded-md bg-emerald-500/15 px-2 py-1 text-emerald-200" title="SENTINEL_MODE=cert in .env">
+              Real data: CMU CERT r4.2 (200 employees)
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <UserCog className="h-3.5 w-3.5 text-fuchsia-300" /> Signed in as <span className="font-semibold text-slate-200">{user}</span>
           </div>

@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 import auth
 import mailer
+import mode
 import simulator
 from common import ALERT_TIERS, audit, event_out, get_employee, get_event, latest_time, names
 from database import get_db
@@ -330,6 +331,8 @@ def _start_session(db: Session, username: str, user_id: str, where: tuple, ua: s
 @router.post("/api/auth/staff-login")
 def staff_login(body: StaffLoginRequest, request: Request, db: Session = Depends(get_db)):
     """Step 1: staff ID + password. With OTP on, this emails a 6-digit code instead of signing in."""
+    if mode.CERT:
+        raise HTTPException(403, "The staff portal is off while SentinelAI runs on the real CERT data. " + mode.DEMO_ONLY)
     username = body.username.strip().lower()
     account = auth.staff_account(username)
     if account and get_employee(db, account[1]).status == "blocked":
@@ -655,7 +658,9 @@ def access_overview(db: Session = Depends(get_db)):
     staff = []
     online = set(presence)
     for user_id, username in sorted(auth.staff_usernames().items()):
-        emp = get_employee(db, user_id)
+        emp = db.get(Employee, user_id)
+        if emp is None:  # CERT mode: the demo staff accounts have no employee here
+            continue
         acc = _access(db, user_id)
         staff.append({"user_id": user_id, "username": username, "name": emp.name, "role": emp.role,
                       "department": emp.department, "email": acc.email, "email_shown": _staff_email(acc),
@@ -900,6 +905,8 @@ def onboarding_options(db: Session = Depends(get_db)):
 @router.post("/api/employees")
 def onboard(body: NewEmployee, request: Request, db: Session = Depends(get_db)):
     """Add an employee with a staff portal login. Their twin starts from their department's habits."""
+    if mode.CERT:
+        raise HTTPException(400, mode.DEMO_ONLY)
     username = body.username.strip().lower()
     name, department, role = body.name.strip(), body.department.strip(), body.role.strip()
     if not re.match(USERNAME_RE, username):

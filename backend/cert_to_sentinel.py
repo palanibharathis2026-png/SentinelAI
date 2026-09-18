@@ -98,6 +98,23 @@ def load_answers(root: Path, dataset: str) -> tuple[set[str], set[tuple[str, str
     return users, days
 
 
+def write_directory(root: Path, users: set[str], path: Path) -> None:
+    """Name, role and department per kept user, from the LDAP snapshots (the latest one each user appears in)."""
+    info = {}
+    for month in sorted(root.rglob("LDAP/*.csv")):
+        for r in rows(month):
+            uid = r.get("user_id", "").strip()
+            if uid in users:
+                dept = (r.get("department") or "").split(" - ", 1)[-1]
+                info[uid] = {"user_id": uid, "name": r.get("employee_name", uid).strip(),
+                             "role": r.get("role", "").strip(), "department": dept.strip()}
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=["user_id", "name", "role", "department"])
+        w.writeheader()
+        w.writerows(info.get(u, {"user_id": u, "name": u, "role": "", "department": ""}) for u in sorted(users))
+    print(f"Wrote {len(users)} employees ({len(info)} found in LDAP) to {path}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--cert", type=Path, required=True, help="folder containing r4.2/ and answers/")
@@ -201,6 +218,7 @@ def main():
             "session_minutes": max(1, min(24 * 60, int((d["last"] - d["first"]).total_seconds() // 60))),
             "resources": "|".join(resources), "actions": "|".join(actions), "scenario": label,
         })
+    write_directory(root, keep, args.out.parent / "cert_employees.csv")
     out.sort(key=lambda e: e["timestamp"])
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with open(args.out, "w", newline="", encoding="utf-8") as f:

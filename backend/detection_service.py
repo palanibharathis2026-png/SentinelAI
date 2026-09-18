@@ -29,6 +29,7 @@ import numpy as np
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+import mode
 import simulator
 from database import reset_db
 from feature_engineering import FEATURE_NAMES, build_twin, compute_features
@@ -41,9 +42,10 @@ log = logging.getLogger("sentinel.engine")
 
 DATA_PATH = Path(os.getenv(
     "SENTINEL_DATA",
-    Path(__file__).resolve().parent.parent / "data" / "synthetic_security_events.csv",
+    mode.CERT_SESSIONS if mode.CERT else Path(__file__).resolve().parent.parent / "data" / "synthetic_security_events.csv",
 ))
-MODEL_DIR = Path(os.getenv("SENTINEL_MODEL_DIR", Path(__file__).resolve().parent.parent / "model"))
+# CERT-trained model files are derived from licensed data, so they stay out of the published model/ folder.
+MODEL_DIR = Path(os.getenv("SENTINEL_MODEL_DIR", mode.PUBLISHED_MODEL_DIR / "cert" if mode.CERT else mode.PUBLISHED_MODEL_DIR))
 MODEL_FILE, CARD_FILE = "sentinel_model.npz", "model_card.json"
 BASELINE_DAYS = 14
 TRAIN_END_DAY = 35
@@ -183,6 +185,17 @@ class SentinelEngine:
             self.learned = {}
             self._versions(db)
 
+    @staticmethod
+    def _cert_directory() -> dict[str, dict]:
+        """Names, roles and departments of the CERT employees (from its LDAP files, via cert_to_sentinel.py)."""
+        import csv
+        if not mode.CERT_EMPLOYEES.exists():
+            return {}
+        with open(mode.CERT_EMPLOYEES, newline="", encoding="utf-8") as f:
+            return {r["user_id"]: {"name": r["name"], "department": r["department"] or "Unknown",
+                                   "role": r["role"] or "Employee", "home_city": "Pittsburgh"}
+                    for r in csv.DictReader(f)}
+
     def _load_history(self) -> list[dict]:
         if DATA_PATH.exists():
             events = simulator.load_csv(DATA_PATH)
@@ -202,8 +215,9 @@ class SentinelEngine:
 
     def _seed(self, db: Session) -> None:
         events = self._load_history()
+        directory = self._cert_directory() if mode.CERT else {}
         for uid in sorted({e["user_id"] for e in events}):
-            p = simulator.PROFILES.get(uid)
+            p = simulator.PROFILES.get(uid) if not mode.CERT else directory.get(uid)
             db.add(Employee(
                 id=uid,
                 name=p["name"] if p else uid,
@@ -648,6 +662,8 @@ class SentinelEngine:
 
     def live_tick(self, db: Session) -> Event | None:
         """Generate one ordinary session from someone whose shift is running right now."""
+        if mode.CERT:
+            return None  # real data only: no generated activity
         now = simulator.now_ist()
         active = {e.id for e in db.scalars(select(Employee).where(Employee.status == "active"))}
         pool = [p for uid, p in simulator.PROFILES.items()

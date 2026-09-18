@@ -66,6 +66,7 @@ COUNTRY_CODES = {
     "NL": "Netherlands", "JP": "Japan", "AU": "Australia", "FR": "France", "CA": "Canada",
 }
 IST = timezone(timedelta(hours=5, minutes=30))
+CERT_OFFICE = {"Pittsburgh": ("United States", 40.44, -79.99)}  # where the CERT company works
 pending_failures: dict[str, int] = {}  # failed sign-ins waiting for that person's next successful one
 
 
@@ -414,11 +415,12 @@ def resolve_user(db: Session, identity: str | None) -> str | None:
 def to_session(db: Session, user_id: str, n: dict, source: str) -> dict:
     emp = db.get(Employee, user_id)
     city, country, lat, lon = n.get("city"), n.get("country"), n.get("lat"), n.get("lon")
-    if city in simulator.LOCATIONS and (lat is None or lon is None):
-        country, lat, lon = country or simulator.LOCATIONS[city][0], *simulator.LOCATIONS[city][1:]
+    places = simulator.LOCATIONS | CERT_OFFICE
+    if city in places and (lat is None or lon is None):
+        country, lat, lon = country or places[city][0], *places[city][1:]
     if lat is None or lon is None:  # the source gave no location: assume the home office
         city = emp.home_city if emp else "Unknown"
-        country, lat, lon = simulator.LOCATIONS.get(city, ("India", 12.92, 79.13))
+        country, lat, lon = places.get(city, ("India", 12.92, 79.13))
     os_name, browser = n.get("os"), n.get("browser")
     if (not os_name or not browser) and n.get("ua"):
         os_name, browser = auth.device_from_user_agent(n["ua"])
@@ -488,21 +490,29 @@ def _in_usual_hours(now_utc: datetime, twin: dict, minutes_ago: int) -> datetime
 def sample(db: Session, engine, source: str):
     """A small realistic log in the provider's own format: two normal sign-ins built from the people's
     digital twins, then a brute-force attack from abroad that succeeds on the sixth try."""
-    staff = list(auth.STAFF_ACCOUNTS.items())[:3]
+    import mode
+    if mode.CERT:  # real CERT employees, addressed the way their company emails look
+        people = db.execute(select(Employee.id, Employee.name).order_by(Employee.id).limit(3)).all()
+        staff = [(".".join(name.lower().split()), (None, uid)) for uid, name in people]
+    else:
+        staff = list(auth.STAFF_ACCOUNTS.items())[:3]
+    domain = "dtaa.com" if mode.CERT else "innovex.example"
     now = datetime.now(timezone.utc).replace(microsecond=0)
     specs = []
     for i, (username, (_, uid)) in enumerate(staff[:2]):
         twin = engine.twin(uid)
         os_name, _, browser = twin["primary_device"].partition(" / ")
-        city = twin["home_city"] if twin["home_city"] in simulator.LOCATIONS else "Chennai"
-        country, lat, lon = simulator.LOCATIONS[city]
-        specs.append({"email": f"{username}@innovex.example", "time": _in_usual_hours(now, twin, 40 - 10 * i),
-                      "success": True, "ip": f"49.36.{10 + i}.{20 + i}", "city": city, "cc": "IN", "country": country,
+        places = simulator.LOCATIONS | CERT_OFFICE
+        city = twin["home_city"] if twin["home_city"] in places else "Chennai"
+        country, lat, lon = places[city]
+        specs.append({"email": f"{username}@{domain}", "time": _in_usual_hours(now, twin, 40 - 10 * i),
+                      "success": True, "ip": f"49.36.{10 + i}.{20 + i}", "city": city,
+                      "cc": "US" if country == "United States" else "IN", "country": country,
                       "lat": lat, "lon": lon, "os": os_name, "browser": browser,
                       "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0 Safari/537.36"})
     username = staff[2][0]
     for k in range(6):
-        specs.append({"email": f"{username}@innovex.example", "time": now - timedelta(minutes=6 - k),
+        specs.append({"email": f"{username}@{domain}", "time": now - timedelta(minutes=6 - k),
                       "success": k == 5, "ip": "102.89.34.7", "city": "Lagos", "cc": "NG", "country": "Nigeria",
                       "lat": 6.52, "lon": 3.38, "os": "Linux", "browser": "Firefox",
                       "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"})

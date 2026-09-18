@@ -3,13 +3,13 @@ Anomalies are isolated in few steps: a short path means 'unusual'.
 
 if api_ratio_log < 0.190:
     if unfamiliar_admin_actions < 0.067:
-        if hours_outside_usual_window < 2.378:
+        if hours_outside_usual_window < 1.783:
             if travel_speed_log < 3.548:
                 if unusual_weekend_login < 0.310:
                     if sensitive_ratio_log < 0.595:
                         if new_city < 0.166:
                             if travel_speed_log < 0.539:
-                                leaf: 152 training session(s), path length 8
+                                leaf: 143 training session(s), path length 8
                             else:  # travel_speed_log >= 0.539
                                 leaf: 7 training session(s), path length 8
                         else:  # new_city >= 0.166
@@ -53,111 +53,129 @@ if api_ratio_log < 0.190:
                             leaf: 1 training session(s), path length 7
                         else:  # travel_speed_log >= 4.116
                             leaf: 1 training session(s), path length 7
-        else:  # hours_outside_usual_window >= 2.378
-            if api_ratio_log < -0.373:
-                if api_ratio_log < -0.467:
+        else:  # hours_outside_usual_window >= 1.783
+            if data_volume_ratio_log < -0.372:
+                if data_volume_ratio_log < -1.016:
                     leaf: 1 training session(s), path length 5
-                else:  # api_ratio_log >= -0.467
-                    leaf: 1 training session(s), path length 5
-            else:  # api_ratio_log >= -0.373
-                if hours_outside_usual_window < 3.524:
-                    leaf: 1 training session(s), path length 5
-                else:  # hours_outside_usual_window >= 3.524
-                    leaf: 1 training session(s), path length 5
+                else:  # data_volume_ratio_log >= -1.016
+                    if hours_outside_usual_window < 2.524:
+                        if data_volume_ratio_log < -0.763:
+                            leaf: 1 training session(s), path length 7
+                        else:  # data_volume_ratio_log >= -0.763
+                            if download_ratio_log < -0.288:
+                                leaf: 1 training session(s), path length 8
+                            else:  # download_ratio_log >= -0.288
+                                leaf: 2 training session(s), path length 8
+                    else:  # hours_outside_usual_window >= 2.524
+                        leaf: 1 training session(s), path length 6
+            else:  # data_volume_ratio_log >= -0.372
+                if sensitive_ratio_log < -0.010:
+                    if api_ratio_log < -0.014:
+                        if hours_outside_usual_window < 2.903:
+                            if download_ratio_log < 0.183:
+                                leaf: 1 training session(s), path length 8
+                            else:  # download_ratio_log >= 0.183
+                                leaf: 1 training session(s), path length 8
+                        else:  # hours_outside_usual_window >= 2.903
+                            leaf: 1 training session(s), path length 7
+                    else:  # api_ratio_log >= -0.014
+                        if sensitive_ratio_log < -0.703:
+                            leaf: 1 training session(s), path length 7
+                        else:  # sensitive_ratio_log >= -0.703
+                            leaf: 1 training session(s), path length 7
+                else:  # sensitive_ratio_log >= -0.010
+                    if api_ratio_log < -0.458:
+                        leaf: 1 training session(s), path length 6
+                    else:  # api_ratio_log >= -0.458
+                        leaf: 1 training session(s), path length 6
     else:  # unfamiliar_admin_actions >= 0.067
-        if download_ratio_log < -0.456:
+        if api_ratio_log < -0.025:
             leaf: 1 training session(s), path length 3
-        else:  # download_ratio_log >= -0.456
-            if hours_outside_usual_window < 0.052:
-                if sensitive_ratio_log < -0.459:
-                    leaf: 1 training session(s), path length 5
-                else:  # sensitive_ratio_log >= -0.459
-                    leaf: 1 training session(s), path length 5
-            else:  # hours_outside_usual_window >= 0.052
-                if api_ratio_log < 0.090:
-                    leaf: 1 training session(s), path length 5
-                else:  # api_ratio_log >= 0.090
+        else:  # api_ratio_log >= -0.025
+            if sensitive_ratio_log < -0.785:
+                leaf: 1 training session(s), path length 4
+            else:  # sensitive_ratio_log >= -0.785
+                if data_volume_ratio_log < -0.241:
+                    if sensitive_ratio_log < -0.541:
+                        leaf: 1 training session(s), path length 6
+                    else:  # sensitive_ratio_log >= -0.541
+                        leaf: 1 training session(s), path length 6
+                else:  # data_volume_ratio_log >= -0.241
                     leaf: 1 training session(s), path length 5
 else:  # api_ratio_log >= 0.190
-    if hours_outside_usual_window < 1.805:
-        if new_city < 0.802:
-            if sensitive_ratio_log < 0.492:
-                if data_volume_ratio_log < 0.234:
-                    if data_volume_ratio_log < -1.152:
-                        leaf: 1 training session(s), path length 6
-                    else:  # data_volume_ratio_log >= -1.152
-                        if api_ratio_log < 0.428:
-                            if download_ratio_log < 0.191:
-                                leaf: 16 training session(s), path length 8
-                            else:  # download_ratio_log >= 0.191
-                                leaf: 8 training session(s), path length 8
-                        else:  # api_ratio_log >= 0.428
-                            if sensitive_ratio_log < -0.603:
-                                leaf: 1 training session(s), path length 8
-                            else:  # sensitive_ratio_log >= -0.603
-                                leaf: 7 training session(s), path length 8
-                else:  # data_volume_ratio_log >= 0.234
-                    if download_ratio_log < 0.218:
-                        if download_ratio_log < 0.007:
-                            if data_volume_ratio_log < 0.353:
-                                leaf: 1 training session(s), path length 8
-                            else:  # data_volume_ratio_log >= 0.353
-                                leaf: 1 training session(s), path length 8
-                        else:  # download_ratio_log >= 0.007
-                            if unusual_weekend_login < 0.233:
-                                leaf: 5 training session(s), path length 8
-                            else:  # unusual_weekend_login >= 0.233
-                                leaf: 1 training session(s), path length 8
-                    else:  # download_ratio_log >= 0.218
-                        if download_ratio_log < 0.283:
+    if failed_logins < 0.640:
+        if unusual_weekend_login < 0.140:
+            if new_city < 0.478:
+                if hours_outside_usual_window < 0.465:
+                    if data_volume_ratio_log < -0.596:
+                        if data_volume_ratio_log < -1.134:
                             leaf: 1 training session(s), path length 7
-                        else:  # download_ratio_log >= 0.283
-                            if data_volume_ratio_log < 0.572:
+                        else:  # data_volume_ratio_log >= -1.134
+                            if download_ratio_log < -0.539:
+                                leaf: 1 training session(s), path length 8
+                            else:  # download_ratio_log >= -0.539
+                                leaf: 1 training session(s), path length 8
+                    else:  # data_volume_ratio_log >= -0.596
+                        if travel_speed_log < 1.143:
+                            if api_ratio_log < 0.642:
+                                leaf: 34 training session(s), path length 8
+                            else:  # api_ratio_log >= 0.642
+                                leaf: 1 training session(s), path length 8
+                        else:  # travel_speed_log >= 1.143
+                            if api_ratio_log < 0.361:
                                 leaf: 2 training session(s), path length 8
-                            else:  # data_volume_ratio_log >= 0.572
-                                leaf: 3 training session(s), path length 8
-            else:  # sensitive_ratio_log >= 0.492
-                if download_ratio_log < -0.035:
-                    if failed_logins < 0.297:
-                        if api_ratio_log < 0.426:
-                            leaf: 1 training session(s), path length 7
-                        else:  # api_ratio_log >= 0.426
-                            leaf: 1 training session(s), path length 7
-                    else:  # failed_logins >= 0.297
-                        leaf: 1 training session(s), path length 6
-                else:  # download_ratio_log >= -0.035
-                    if api_ratio_log < 0.431:
-                        if sensitive_ratio_log < 0.669:
-                            if data_volume_ratio_log < 0.438:
-                                leaf: 2 training session(s), path length 8
-                            else:  # data_volume_ratio_log >= 0.438
+                            else:  # api_ratio_log >= 0.361
                                 leaf: 1 training session(s), path length 8
-                        else:  # sensitive_ratio_log >= 0.669
-                            if data_volume_ratio_log < 0.632:
-                                leaf: 2 training session(s), path length 8
-                            else:  # data_volume_ratio_log >= 0.632
+                else:  # hours_outside_usual_window >= 0.465
+                    if sensitive_ratio_log < -0.123:
+                        if data_volume_ratio_log < 0.146:
+                            if data_volume_ratio_log < -0.210:
                                 leaf: 1 training session(s), path length 8
-                    else:  # api_ratio_log >= 0.431
-                        if download_ratio_log < 0.259:
+                            else:  # data_volume_ratio_log >= -0.210
+                                leaf: 1 training session(s), path length 8
+                        else:  # data_volume_ratio_log >= 0.146
                             leaf: 1 training session(s), path length 7
-                        else:  # download_ratio_log >= 0.259
-                            leaf: 1 training session(s), path length 7
-        else:  # new_city >= 0.802
-            if api_ratio_log < 0.302:
-                if hours_outside_usual_window < 0.735:
-                    if failed_logins < 0.202:
-                        if data_volume_ratio_log < 0.200:
-                            leaf: 1 training session(s), path length 7
-                        else:  # data_volume_ratio_log >= 0.200
-                            leaf: 1 training session(s), path length 7
-                    else:  # failed_logins >= 0.202
-                        leaf: 1 training session(s), path length 6
-                else:  # hours_outside_usual_window >= 0.735
+                    else:  # sensitive_ratio_log >= -0.123
+                        if download_ratio_log < 0.170:
+                            if sensitive_ratio_log < 0.550:
+                                leaf: 2 training session(s), path length 8
+                            else:  # sensitive_ratio_log >= 0.550
+                                leaf: 1 training session(s), path length 8
+                        else:  # download_ratio_log >= 0.170
+                            if hours_outside_usual_window < 1.735:
+                                leaf: 4 training session(s), path length 8
+                            else:  # hours_outside_usual_window >= 1.735
+                                leaf: 2 training session(s), path length 8
+            else:  # new_city >= 0.478
+                if travel_speed_log < 0.720:
                     leaf: 1 training session(s), path length 5
-            else:  # api_ratio_log >= 0.302
-                leaf: 1 training session(s), path length 4
-    else:  # hours_outside_usual_window >= 1.805
-        if api_ratio_log < 0.322:
+                else:  # travel_speed_log >= 0.720
+                    if data_volume_ratio_log < 0.360:
+                        if api_ratio_log < 0.199:
+                            leaf: 1 training session(s), path length 7
+                        else:  # api_ratio_log >= 0.199
+                            leaf: 1 training session(s), path length 7
+                    else:  # data_volume_ratio_log >= 0.360
+                        leaf: 1 training session(s), path length 6
+        else:  # unusual_weekend_login >= 0.140
             leaf: 1 training session(s), path length 3
-        else:  # api_ratio_log >= 0.322
+    else:  # failed_logins >= 0.640
+        if sensitive_ratio_log < -0.969:
             leaf: 1 training session(s), path length 3
+        else:  # sensitive_ratio_log >= -0.969
+            if data_volume_ratio_log < 0.308:
+                if data_volume_ratio_log < 0.153:
+                    if new_city < 0.137:
+                        if sensitive_ratio_log < 0.585:
+                            leaf: 1 training session(s), path length 7
+                        else:  # sensitive_ratio_log >= 0.585
+                            leaf: 1 training session(s), path length 7
+                    else:  # new_city >= 0.137
+                        leaf: 1 training session(s), path length 6
+                else:  # data_volume_ratio_log >= 0.153
+                    leaf: 1 training session(s), path length 5
+            else:  # data_volume_ratio_log >= 0.308
+                if sensitive_ratio_log < 0.122:
+                    leaf: 1 training session(s), path length 5
+                else:  # sensitive_ratio_log >= 0.122
+                    leaf: 1 training session(s), path length 5

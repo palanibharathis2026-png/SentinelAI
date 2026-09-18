@@ -82,6 +82,20 @@ A locked account can be unblocked from **Employees**. After 5 wrong admin passwo
 
 The model is saved as files in [`model/`](model/), including a **readable JSON copy of every tree** (`sentinel_model.json`), a 40-line scorer that uses only that file (`predict_example.py`), the first tree as if/else rules, per-feature statistics, the training rows and charts. The binary copy is `sentinel_model.npz` (all 200 trees, the learned medians and spreads, and the calibration, as plain NumPy arrays with no pickle) and `model_card.json` (algorithms, parameters, what was learned per feature, training data and test results). The **Model & Accuracy** page shows the card and has download buttons. Retrain with `cd backend && python train_model.py --check`, or on your own logs with `--data my_logs.csv`. See [`model/README.md`](model/README.md) to load and use it.
 
+## Run on real data (CMU CERT r4.2)
+
+SentinelAI can run entirely on the real CERT insider-threat dataset instead of the demo company:
+
+1. Download `r4.2.tar.bz2` and `answers.tar.bz2` from Carnegie Mellon's KiltHub and extract them to `C:\cert`
+   (see `backend/cert_to_sentinel.py` for the exact commands).
+2. `cd backend && python cert_to_sentinel.py --cert C:\cert` (about 3 minutes, 59,165 employee-days).
+3. Set `SENTINEL_MODE=cert` in `.env` and run `start.bat`. The first start trains on the real data (about 2 minutes).
+
+The dashboard then shows the 200 real employees (70 labelled insiders) and the model is trained on their behaviour.
+The staff portal and attack simulator belong to the demo company, so they are off in this mode.
+The CERT licence forbids publishing the data or anything derived from it, so CERT mode uses its own
+database and `model/cert/`, both git-ignored. Set `SENTINEL_MODE=demo` to switch back.
+
 ## Features
 
 | | Feature | What it shows |

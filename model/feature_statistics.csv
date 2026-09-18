@@ -1,14 +1,14 @@
 feature,description,normal_median,normal_spread,forest_split_share
-hours_outside_usual_window,Hours between the login time and the person's usual working window,0.0,0.6374,0.0955
-unusual_weekend_login,1 if a weekend login by someone who rarely works weekends,0.0,0.25,0.0255
+hours_outside_usual_window,Hours between the login time and the person's usual working window,0.0,0.6314,0.0886
+unusual_weekend_login,1 if a weekend login by someone who rarely works weekends,0.0,0.25,0.0252
 new_device,1 if the OS/browser was never used by this person,0.0,0.25,0.0
 new_country,1 if this person never logged in from this country,0.0,0.25,0.0
-new_city,1 if this person never logged in from this city,0.0,0.25,0.0446
-travel_speed_log,log(1 + km/h) needed to travel from the last trusted session,0.0,1.0276,0.0862
-failed_logins,Failed attempts before the successful login,0.0,0.3634,0.0513
-download_ratio_log,log of files downloaded vs. this person's average,0.019,0.3956,0.1641
-data_volume_ratio_log,log of MB downloaded vs. this person's average,0.0126,0.4561,0.1725
-api_ratio_log,log of API calls vs. this person's average,0.0044,0.3279,0.1661
-sensitive_ratio_log,log of sensitive records opened vs. this person's average,-0.157,0.516,0.1724
+new_city,1 if this person never logged in from this city,0.0,0.25,0.0441
+travel_speed_log,log(1 + km/h) needed to travel from the last trusted session,0.0,1.0276,0.0797
+failed_logins,Failed attempts before the successful login,0.0,0.3634,0.0515
+download_ratio_log,log of files downloaded vs. this person's average,0.019,0.3956,0.1711
+data_volume_ratio_log,log of MB downloaded vs. this person's average,0.0126,0.4561,0.1732
+api_ratio_log,log of API calls vs. this person's average,0.0044,0.3279,0.1785
+sensitive_ratio_log,log of sensitive records opened vs. this person's average,-0.157,0.516,0.1664
 new_sensitive_systems,Number of sensitive systems opened for the first time,0.0,0.25,0.0
-unfamiliar_admin_actions,Number of admin actions this person never performed before,0.0,0.25,0.0219
+unfamiliar_admin_actions,Number of admin actions this person never performed before,0.0,0.25,0.0216

@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session  # noqa: E402
 
 import analyst  # noqa: E402
 import integrations  # noqa: E402
+import mode  # noqa: E402
 import auth  # noqa: E402
 import portal  # noqa: E402
 import simulator  # noqa: E402
@@ -36,7 +37,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 log = logging.getLogger("sentinel.api")
 
 live = {
-    "enabled": os.getenv("LIVE_TRAFFIC", "true").lower() == "true",
+    "enabled": os.getenv("LIVE_TRAFFIC", "true").lower() == "true" and not mode.CERT,
     "interval": float(os.getenv("LIVE_INTERVAL_SECONDS", "8")),
 }
 
@@ -122,7 +123,7 @@ def _lan_ip() -> str | None:
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "model_trained": sentinel.detector is not None,
+    return {"status": "ok", "model_trained": sentinel.detector is not None, "mode": mode.MODE,
             "ai_analyst": "claude" if analyst.llm_enabled() else "template", "lan_ip": _lan_ip()}
 
 
@@ -246,9 +247,8 @@ def learning_retrain(request: Request, db: Session = Depends(get_db)):
 @app.get("/api/users")
 def list_users(db: Session = Depends(get_db)):
     since = _latest_time(db) - timedelta(hours=24)
-    latest = {}
-    for e in db.scalars(select(Event).order_by(Event.timestamp)).all():
-        latest[e.user_id] = e
+    newest = select(Event.user_id, func.max(Event.id).label("id")).group_by(Event.user_id).subquery()
+    latest = {e.user_id: e for e in db.scalars(select(Event).join(newest, Event.id == newest.c.id)).all()}
     peak = dict(db.execute(select(Event.user_id, func.max(Event.risk))
                            .where(Event.timestamp >= since).group_by(Event.user_id)).all())
     counts = dict(db.execute(select(Event.user_id, func.count()).group_by(Event.user_id)).all())
@@ -321,6 +321,8 @@ class SimulateRequest(BaseModel):
 
 @app.post("/api/simulate")
 def simulate(body: SimulateRequest, request: Request, db: Session = Depends(get_db)):
+    if mode.CERT:
+        raise HTTPException(400, mode.DEMO_ONLY)
     if body.scenario not in simulator.SCENARIOS:
         raise HTTPException(400, f"Unknown scenario. Choose from: {', '.join(simulator.SCENARIOS)}")
     if body.user_id and body.user_id not in simulator.PROFILES:
@@ -378,6 +380,8 @@ class ScoreRequest(BaseModel):
 @app.post("/api/lab/score")
 def lab_score(body: ScoreRequest, db: Session = Depends(get_db)):
     """What-if scoring: build a hypothetical session and score it without storing it."""
+    if mode.CERT:
+        raise HTTPException(400, mode.DEMO_ONLY)
     p = simulator.PROFILES.get(body.user_id)
     if not p:
         raise HTTPException(404, "Unknown employee")
@@ -469,7 +473,7 @@ def model_card():
 def model_evaluation():
     """Cross-validation over many datasets and results on real labelled data (written by evaluate.py)."""
     try:
-        return json.loads((MODEL_DIR / "evaluation.json").read_text(encoding="utf-8"))
+        return json.loads((mode.PUBLISHED_MODEL_DIR / "evaluation.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
 
@@ -494,6 +498,8 @@ def get_live():
 
 @app.post("/api/live")
 def set_live(body: LiveUpdate):
+    if mode.CERT and body.enabled:
+        raise HTTPException(400, mode.DEMO_ONLY)
     live["enabled"] = body.enabled
     return live
 

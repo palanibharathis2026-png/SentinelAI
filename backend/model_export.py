@@ -166,7 +166,7 @@ def export_readable(engine, model_dir: Path, features: list[str], descriptions: 
         w = csv.writer(f)
         w.writerow(features)
         for row in engine._train_X:
-            w.writerow([round(float(v), 4) for v in row])
+            w.writerow([repr(float(v)) for v in row])  # full precision: a retrain reproduces the model exactly
     (model_dir / "tree_000.txt").write_text(_tree_text(det.forest.model.trees[0], features), encoding="utf-8")
     (charts / "roc_curve.svg").write_text(
         roc_svg(engine.metrics["curves"], "ROC curve on held-out test sessions"), encoding="utf-8")

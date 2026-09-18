@@ -33,8 +33,8 @@ readable = np.array([SentinelModel.load().risk(x) for x in X])
 fresh = SentinelModel.train(rows)
 retrained = np.array([fresh.risk(x) for x in X])
 
-# The retrained copy learns from training_features.csv, which stores values rounded to 4 decimals,
-# so its split thresholds can differ in the 4th decimal: a gap under 0.5 risk points is the same model.
+# The retrained copy learns from training_features.csv (full precision), so it should match exactly;
+# a gap under 0.5 risk points still counts as the same model.
 for name, scores, tolerance in (("readable JSON copy", readable, 1e-3), ("retrained from scratch", retrained, 0.5)):
     gap = float(np.max(np.abs(scores - app)))
     print(f"{name:24s} vs app model: largest difference {gap:.4f} risk points on {len(X)} sessions -> "

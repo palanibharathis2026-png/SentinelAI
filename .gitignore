@@ -28,3 +28,6 @@ cert/
 
 # Local retrains from model/sentinel_model.py (the app never reads these)
 model/retrained/
+
+# Model trained in CERT mode (derived from licensed data, never published)
+model/cert/
