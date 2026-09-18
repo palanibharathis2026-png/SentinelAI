@@ -757,17 +757,60 @@ class MailSettings(BaseModel):
     admin_email: str
 
 
-@router.put("/api/settings/mail")
-def set_mail_settings(body: MailSettings, request: Request, db: Session = Depends(get_db)):
-    email = body.admin_email.strip()
-    if email and ("@" not in email or " " in email):
-        raise HTTPException(400, "That does not look like an email address")
+admin_email_change: dict = {}  # pending change: new address, hashed code, expiry, tries
+
+
+def _apply_admin_email(db: Session, request: Request, email: str | None) -> dict:
+    old = _admin_email(db)
     row = db.get(Setting, "admin_email") or Setting(key="admin_email")
     row.value = email or None
     db.merge(row)
     db.commit()
-    audit(db, request, "admin_email_changed", None, email or "cleared")
+    audit(db, request, "admin_email_changed", None, f"{old} -> {email or 'cleared'}")
+    if _real_delivery(old) and old != _admin_email(db):
+        mailer.send(db, old, "SentinelAI admin email changed",
+                    f"The SentinelAI admin email was changed from this address to {_mask(_admin_email(db))}. "
+                    "Admin sign-in codes and security alerts now go there. If this wasn't you, sign in and change it back.",
+                    "alert")
     return {"admin_email": _admin_email(db)}
+
+
+@router.put("/api/settings/mail")
+def set_mail_settings(body: MailSettings, request: Request, db: Session = Depends(get_db)):
+    """Change the admin email. When email sending works, the new address must be confirmed with a code first,
+    because admin sign-in codes go there: a typo must not lock the admin out."""
+    email = body.admin_email.strip()
+    if email and not _valid_email(email):
+        raise HTTPException(400, "That does not look like an email address")
+    if not email or not _real_delivery(email):
+        return _apply_admin_email(db, request, email)
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    admin_email_change.clear()
+    admin_email_change.update(email=email, code=hashlib.sha256(code.encode()).hexdigest(),
+                              expires=time.time() + OTP_SECONDS, tries=0)
+    mailer.send(db, email, f"Confirm your SentinelAI admin email: {code}",
+                f"Enter {code} in SentinelAI to make this the admin email. It expires in {OTP_SECONDS // 60} minutes.",
+                "otp")
+    audit(db, request, "admin_email_change_requested", None, email)
+    return {"verify_required": True, "pending": _mask(email), "admin_email": _admin_email(db)}
+
+
+class MailVerify(BaseModel):
+    code: str
+
+
+@router.post("/api/settings/mail/verify")
+def verify_mail_settings(body: MailVerify, request: Request, db: Session = Depends(get_db)):
+    p = admin_email_change
+    if not p or p["expires"] < time.time():
+        admin_email_change.clear()
+        raise HTTPException(400, "No email change is waiting, or the code expired. Save the new address again.")
+    if p["tries"] >= OTP_MAX_TRIES or not hmac.compare_digest(p["code"], hashlib.sha256(body.code.strip().encode()).hexdigest()):
+        p["tries"] += 1
+        raise HTTPException(400, "Wrong code. Check the email sent to the new address.")
+    email = p["email"]
+    admin_email_change.clear()
+    return _apply_admin_email(db, request, email)
 
 
 @router.post("/api/mail/test")

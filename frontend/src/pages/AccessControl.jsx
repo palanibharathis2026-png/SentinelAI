@@ -42,6 +42,7 @@ export default function AccessControl() {
   const { data, error, refresh } = usePolling(api.access, 4000);
   const [busy, setBusy] = useState(null);
   const [note, setNote] = useState(null);
+  const [emailCheck, setEmailCheck] = useState(null);
 
   async function run(key, fn, message) {
     setBusy(key);
@@ -111,9 +112,32 @@ export default function AccessControl() {
               Admin email (receives login, denial, request and attack alerts)
               <div className="mt-1">
                 <EmailField value={data.admin_email.endsWith(".demo") ? "" : data.admin_email} placeholder={data.admin_email}
-                  onSave={(v) => run("admin-email", () => api.setAdminEmail(v), "Admin email saved")} />
+                  onSave={(v) => run("admin-email", async () => {
+                    const r = await api.setAdminEmail(v);
+                    setEmailCheck(r.verify_required ? { to: r.pending, code: "" } : null);
+                  }, "Admin email updated")} />
               </div>
             </label>
+            {emailCheck && (
+              <form className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-3 text-xs"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  run("admin-email", async () => { await api.verifyAdminEmail(emailCheck.code); setEmailCheck(null); },
+                    "New admin email confirmed. Sign-in codes and alerts go there now.");
+                }}>
+                <div className="mb-2 text-slate-200">We sent a code to <b>{emailCheck.to}</b>. Enter it to confirm the new address
+                  (the old one keeps working until then).</div>
+                <div className="flex gap-2">
+                  <input value={emailCheck.code} maxLength={6} inputMode="numeric" placeholder="000000"
+                    onChange={(e) => setEmailCheck({ ...emailCheck, code: e.target.value.replace(/\D/g, "") })}
+                    className="w-28 rounded-md border border-white/10 bg-slate-950 px-2 py-1 text-center font-mono tracking-widest" />
+                  <button className="rounded-md bg-cyan-500/20 px-3 text-cyan-200 hover:bg-cyan-500/30" disabled={emailCheck.code.length !== 6}>
+                    Confirm
+                  </button>
+                  <button type="button" className="text-slate-400 hover:text-slate-200" onClick={() => setEmailCheck(null)}>Cancel</button>
+                </div>
+              </form>
+            )}
             <div className="flex flex-wrap items-center gap-2">
               <span className={`rounded-full px-2 py-0.5 text-xs ${data.smtp_configured ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-200"}`}>
                 {data.smtp_configured ? "Email sending: ON (SMTP)" : "Email sending: demo mode (Mail Outbox only)"}

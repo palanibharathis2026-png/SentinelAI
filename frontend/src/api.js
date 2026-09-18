@@ -117,6 +117,7 @@ export const api = {
   unlockStaff: (userId) => post(`/api/access/${userId}/unlock`),
   decideRequest: (id, approve) => post(`/api/access/requests/${id}`, { approve }),
   setAdminEmail: (email) => request("/api/settings/mail", { method: "PUT", body: JSON.stringify({ admin_email: email }) }),
+  verifyAdminEmail: (code) => post("/api/settings/mail/verify", { code }),
   testMail: () => post("/api/mail/test"),
   mail: (limit = 60) => request(`/api/mail?limit=${limit}`),
   staffMe: () => request("/api/staff/me"),
